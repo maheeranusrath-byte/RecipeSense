@@ -5,3 +5,4 @@ data/recipes.parquet
 data/recipes_cleaned.parquet
 data/recipe_index.pkl
 RecipeSense.pptx
+data/recipe_index.db

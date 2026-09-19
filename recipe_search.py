@@ -1,5 +1,6 @@
-import pickle
+import json
 import re
+import sqlite3
 from pathlib import Path
 
 
@@ -9,23 +10,60 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
-INDEX_FILE = PROJECT_DIR / "data" / "recipe_index.pkl"
+SQLITE_FILE = PROJECT_DIR / "data" / "recipe_index.db"
 
 
 # ============================================================
-# LOAD RECIPE INDEX
+# SQLITE CONNECTION
 # ============================================================
 
-print("Loading RecipeSense index...")
+def get_connection():
 
-with open(INDEX_FILE, "rb") as file:
-    index_data = pickle.load(file)
+    connection = sqlite3.connect(
+        SQLITE_FILE
+    )
 
-recipes = index_data["recipes"]
-ingredient_index = index_data["ingredient_index"]
+    connection.row_factory = sqlite3.Row
 
-print(f"Recipes available: {len(recipes)}")
-print(f"Ingredients indexed: {len(ingredient_index)}")
+    return connection
+
+
+# ============================================================
+# DATABASE INFORMATION
+# ============================================================
+
+def get_database_stats():
+
+    connection = get_connection()
+
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM recipes"
+    )
+
+    recipe_count = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(DISTINCT ingredient) FROM ingredient_index"
+    )
+
+    ingredient_count = cursor.fetchone()[0]
+
+    connection.close()
+
+    return recipe_count, ingredient_count
+
+
+recipe_count, ingredient_count = get_database_stats()
+
+print("RecipeSense SQLite index ready.")
+print(
+    f"Recipes available: {recipe_count}"
+)
+print(
+    f"Ingredients indexed: {ingredient_count}"
+)
 
 
 # ============================================================
@@ -37,7 +75,9 @@ def normalize_ingredient(ingredient):
     if ingredient is None:
         return ""
 
-    ingredient = str(ingredient).lower().strip()
+    ingredient = str(
+        ingredient
+    ).lower().strip()
 
     # Remove punctuation
     ingredient = re.sub(
@@ -53,7 +93,10 @@ def normalize_ingredient(ingredient):
         ingredient
     ).strip()
 
-    # Remove quantity/unit words
+    # --------------------------------------------------------
+    # Quantity and unit words
+    # --------------------------------------------------------
+
     words_to_remove = {
         "cup",
         "cups",
@@ -95,7 +138,10 @@ def normalize_ingredient(ingredient):
 
     ingredient = " ".join(words)
 
-    # Remove preparation/descriptive words
+    # --------------------------------------------------------
+    # Preparation words
+    # --------------------------------------------------------
+
     preparation_words = [
         "chopped",
         "diced",
@@ -130,11 +176,22 @@ def normalize_ingredient(ingredient):
         ingredient
     ).strip()
 
+    # --------------------------------------------------------
     # Basic plural normalization
-    if ingredient.endswith("ies"):
-        ingredient = ingredient[:-3] + "y"
+    # --------------------------------------------------------
 
-    elif ingredient.endswith("s") and not ingredient.endswith("ss"):
+    if ingredient.endswith("ies"):
+
+        ingredient = (
+            ingredient[:-3] +
+            "y"
+        )
+
+    elif (
+        ingredient.endswith("s")
+        and not ingredient.endswith("ss")
+    ):
+
         ingredient = ingredient[:-1]
 
     return ingredient
@@ -157,7 +214,10 @@ def normalize_user_ingredients(user_input):
         )
 
         if ingredient:
-            normalized.add(ingredient)
+
+            normalized.add(
+                ingredient
+            )
 
     return normalized
 
@@ -169,15 +229,19 @@ def normalize_user_ingredients(user_input):
 def get_category(percentage):
 
     if percentage >= 75:
+
         return "Excellent match"
 
     elif percentage >= 50:
+
         return "Good match"
 
     elif percentage >= 25:
+
         return "Partial match"
 
     else:
+
         return "Low match"
 
 
@@ -188,9 +252,22 @@ def get_category(percentage):
 def normalize_category(category):
 
     if category is None:
+
         return ""
 
-    category = str(category).lower().strip()
+    category = str(
+        category
+    ).lower().strip()
+
+    category = category.replace(
+        "_",
+        " "
+    )
+
+    category = category.replace(
+        "/",
+        " "
+    )
 
     category = re.sub(
         r"[^a-z0-9\s&-]",
@@ -208,16 +285,86 @@ def normalize_category(category):
 
 
 # ============================================================
+# CATEGORY GROUPS
+# ============================================================
+
+CATEGORY_GROUPS = {
+
+    "main course": [
+        "main course",
+        "main courses",
+        "main dish",
+        "main dishes",
+        "one dish meal",
+        "one dish meals",
+        "entree",
+        "entrees"
+    ],
+
+    "starters": [
+        "starter",
+        "starters",
+        "appetizer",
+        "appetizers",
+        "appetizer snack"
+    ],
+
+    "desserts": [
+        "dessert",
+        "desserts"
+    ],
+
+    "shakes": [
+        "shake",
+        "shakes",
+        "beverage",
+        "beverages",
+        "drink",
+        "drinks"
+    ],
+
+    "salads": [
+        "salad",
+        "salads"
+    ],
+
+    "soups": [
+        "soup",
+        "soups"
+    ],
+
+    "snacks": [
+        "snack",
+        "snacks"
+    ],
+
+    "breakfast": [
+        "breakfast",
+        "breakfasts"
+    ],
+
+    "breads": [
+        "bread",
+        "breads"
+    ]
+}
+
+
+# ============================================================
 # CATEGORY FILTERING
 # ============================================================
 
-def recipe_matches_category(recipe, selected_category):
+def recipe_matches_category(
+    recipe_category,
+    selected_category
+):
 
     if not selected_category:
+
         return True
 
     recipe_category = normalize_category(
-        recipe.get("category", "")
+        recipe_category
     )
 
     selected_category = normalize_category(
@@ -225,78 +372,40 @@ def recipe_matches_category(recipe, selected_category):
     )
 
     if not recipe_category:
+
         return False
 
     # Direct match
     if recipe_category == selected_category:
+
         return True
 
-    # Category groups
-    category_groups = {
+    # Group match
+    if selected_category in CATEGORY_GROUPS:
 
-        "main course": [
-            "main course",
-            "main dishes",
-            "main dish",
-            "one dish meal"
-        ],
+        for category in CATEGORY_GROUPS[
+            selected_category
+        ]:
 
-        "starters": [
-            "starter",
-            "starters",
-            "appetizer",
-            "appetizers"
-        ],
+            category = normalize_category(
+                category
+            )
 
-        "desserts": [
-            "dessert",
-            "desserts"
-        ],
+            if recipe_category == category:
 
-        "shakes": [
-            "shake",
-            "shakes",
-            "beverage",
-            "beverages",
-            "drinks",
-            "drink"
-        ],
-
-        "salads": [
-            "salad",
-            "salads"
-        ],
-
-        "soups": [
-            "soup",
-            "soups"
-        ],
-
-        "snacks": [
-            "snack",
-            "snacks"
-        ],
-
-        "breakfast": [
-            "breakfast",
-            "breakfasts"
-        ],
-
-        "breads": [
-            "bread",
-            "breads"
-        ]
-    }
-
-    if selected_category in category_groups:
-
-        for category in category_groups[selected_category]:
-
-            if category == recipe_category:
                 return True
 
             if category in recipe_category:
+
                 return True
+
+    # Flexible matching
+    if (
+        selected_category in recipe_category
+        or recipe_category in selected_category
+    ):
+
+        return True
 
     return False
 
@@ -311,183 +420,317 @@ def find_recipes(
     limit=10
 ):
 
-    candidate_ids = set()
+    # --------------------------------------------------------
+    # Normalize selected category
+    # --------------------------------------------------------
+
+    if category:
+
+        category = normalize_category(
+            category
+        )
 
     # --------------------------------------------------------
-    # Find candidate recipes using ingredient index
+    # Open database
     # --------------------------------------------------------
+
+    connection = get_connection()
+
+    cursor = connection.cursor()
+
+    # --------------------------------------------------------
+    # Find candidate recipe IDs
+    #
+    # IMPORTANT:
+    # We collect IDs but DO NOT put all of them into
+    # one giant SQL IN (...) query.
+    # --------------------------------------------------------
+
+    candidate_ids = set()
 
     for ingredient in user_ingredients:
 
-        recipe_ids = ingredient_index.get(
-            ingredient,
-            []
+        cursor.execute(
+            """
+            SELECT recipe_id
+            FROM ingredient_index
+            WHERE ingredient = ?
+            """,
+            (ingredient,)
         )
 
-        candidate_ids.update(recipe_ids)
+        rows = cursor.fetchall()
+
+        for row in rows:
+
+            candidate_ids.add(
+                int(row["recipe_id"])
+            )
+
+    # --------------------------------------------------------
+    # No candidates
+    # --------------------------------------------------------
+
+    if not candidate_ids:
+
+        connection.close()
+
+        return []
+
+    # --------------------------------------------------------
+    # Evaluate recipes in batches
+    #
+    # SQLite has a limit on the number of SQL variables.
+    # Therefore we process recipe IDs in small batches.
+    # --------------------------------------------------------
+
+    candidate_ids = list(
+        candidate_ids
+    )
+
+    BATCH_SIZE = 500
 
     results = []
 
     seen_names = set()
 
     # --------------------------------------------------------
-    # Evaluate each candidate recipe
+    # Process batches
     # --------------------------------------------------------
 
-    for recipe_id in candidate_ids:
+    for start in range(
+        0,
+        len(candidate_ids),
+        BATCH_SIZE
+    ):
 
-        recipe = recipes.get(recipe_id)
+        batch_ids = candidate_ids[
+            start:start + BATCH_SIZE
+        ]
 
-        if recipe is None:
-            continue
-
-        # ----------------------------------------------------
-        # Category filter
-        # ----------------------------------------------------
-
-        if not recipe_matches_category(
-            recipe,
-            category
-        ):
-            continue
-
-        recipe_name = recipe["name"]
-
-        # ----------------------------------------------------
-        # Remove duplicate recipe names
-        # ----------------------------------------------------
-
-        normalized_name = re.sub(
-            r"[^a-z0-9]",
-            "",
-            recipe_name.lower()
+        placeholders = ",".join(
+            ["?"] * len(batch_ids)
         )
 
-        if normalized_name in seen_names:
-            continue
-
-        # ----------------------------------------------------
-        # Recipe ingredients
-        # ----------------------------------------------------
-
-        recipe_ingredients = set(
-            recipe["ingredients"]
+        cursor.execute(
+            f"""
+            SELECT
+                recipe_id,
+                name,
+                category,
+                ingredients
+            FROM recipes
+            WHERE recipe_id IN ({placeholders})
+            """,
+            tuple(batch_ids)
         )
 
-        if not recipe_ingredients:
-            continue
+        recipes = cursor.fetchall()
 
         # ----------------------------------------------------
-        # Matched ingredients
+        # Evaluate recipes
         # ----------------------------------------------------
 
-        matched = user_ingredients.intersection(
-            recipe_ingredients
-        )
+        for recipe in recipes:
 
-        # We need at least 2 matching ingredients
-        if len(matched) < 2:
-            continue
+            recipe_category = recipe[
+                "category"
+            ]
 
-        # ----------------------------------------------------
-        # Missing ingredients
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # CATEGORY FILTER
+            # ------------------------------------------------
 
-        missing = (
-            recipe_ingredients -
-            user_ingredients
-        )
+            if not recipe_matches_category(
+                recipe_category,
+                category
+            ):
 
-        total = len(recipe_ingredients)
+                continue
 
-        matched_count = len(matched)
+            recipe_name = recipe[
+                "name"
+            ]
 
-        missing_count = len(missing)
+            # ------------------------------------------------
+            # Remove duplicate recipe names
+            # ------------------------------------------------
 
-        # ----------------------------------------------------
-        # Match percentage
-        # ----------------------------------------------------
-
-        percentage = (
-            matched_count / total
-        ) * 100
-
-        # ----------------------------------------------------
-        # Ingredient coverage
-        #
-        # Measures how much of the user's available
-        # ingredients are actually useful for this recipe.
-        # ----------------------------------------------------
-
-        user_coverage = (
-            matched_count /
-            len(user_ingredients)
-        ) * 100
-
-        # ----------------------------------------------------
-        # Missing ingredient penalty
-        #
-        # Fewer missing ingredients = better.
-        # ----------------------------------------------------
-
-        if total > 0:
-
-            missing_ratio = (
-                missing_count / total
+            normalized_name = re.sub(
+                r"[^a-z0-9]",
+                "",
+                recipe_name.lower()
             )
 
-        else:
+            if normalized_name in seen_names:
 
-            missing_ratio = 1
+                continue
 
-        # ----------------------------------------------------
-        # Final ranking score
-        #
-        # Main priority:
-        #   1. Recipe match percentage
-        #   2. Fewer missing ingredients
-        #   3. More matched ingredients
-        #
-        # This produces a more useful recommendation order.
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # Recipe ingredients
+            # ------------------------------------------------
 
-        ranking_score = (
-            (percentage * 0.60) +
-            (user_coverage * 0.25) +
-            ((1 - missing_ratio) * 100 * 0.15)
-        )
+            try:
 
-        results.append({
+                recipe_ingredients = set(
+                    json.loads(
+                        recipe[
+                            "ingredients"
+                        ]
+                    )
+                )
 
-            "name": recipe_name,
+            except (
+                json.JSONDecodeError,
+                TypeError
+            ):
 
-            "percentage": percentage,
+                recipe_ingredients = set()
 
-            "ranking_score": ranking_score,
+            if not recipe_ingredients:
 
-            "matched": sorted(matched),
+                continue
 
-            "missing": sorted(missing),
+            # ------------------------------------------------
+            # Matched ingredients
+            # ------------------------------------------------
 
-            "total": total,
-
-            "matched_count": matched_count,
-
-            "missing_count": missing_count,
-
-            "category": get_category(
-                percentage
-            ),
-
-            "recipe_category": recipe.get(
-                "category",
-                ""
+            matched = (
+                user_ingredients.intersection(
+                    recipe_ingredients
+                )
             )
-        })
 
-        seen_names.add(
-            normalized_name
-        )
+            # ------------------------------------------------
+            # Minimum matching requirement
+            # ------------------------------------------------
+
+            if len(matched) < 2:
+
+                continue
+
+            # ------------------------------------------------
+            # Missing ingredients
+            # ------------------------------------------------
+
+            missing = (
+                recipe_ingredients -
+                user_ingredients
+            )
+
+            total = len(
+                recipe_ingredients
+            )
+
+            matched_count = len(
+                matched
+            )
+
+            missing_count = len(
+                missing
+            )
+
+            # ------------------------------------------------
+            # Match percentage
+            # ------------------------------------------------
+
+            percentage = (
+                matched_count /
+                total
+            ) * 100
+
+            # ------------------------------------------------
+            # User coverage
+            # ------------------------------------------------
+
+            if len(user_ingredients) > 0:
+
+                user_coverage = (
+                    matched_count /
+                    len(user_ingredients)
+                ) * 100
+
+            else:
+
+                user_coverage = 0
+
+            # ------------------------------------------------
+            # Missing ratio
+            # ------------------------------------------------
+
+            if total > 0:
+
+                missing_ratio = (
+                    missing_count /
+                    total
+                )
+
+            else:
+
+                missing_ratio = 1
+
+            # ------------------------------------------------
+            # Ranking score
+            # ------------------------------------------------
+
+            ranking_score = (
+
+                (percentage * 0.60)
+
+                +
+
+                (user_coverage * 0.25)
+
+                +
+
+                (
+                    (1 - missing_ratio)
+                    * 100
+                    * 0.15
+                )
+            )
+
+            results.append({
+
+                "name": recipe_name,
+
+                "percentage": percentage,
+
+                "ranking_score": ranking_score,
+
+                "matched": sorted(
+                    matched
+                ),
+
+                "missing": sorted(
+                    missing
+                ),
+
+                "total": total,
+
+                "matched_count": matched_count,
+
+                "missing_count": missing_count,
+
+                "category": get_category(
+                    percentage
+                ),
+
+                "recipe_category": (
+                    recipe_category
+                )
+
+            })
+
+            seen_names.add(
+                normalized_name
+            )
+
+    # --------------------------------------------------------
+    # Close database
+    # --------------------------------------------------------
+
+    connection.close()
 
     # ========================================================
     # SORT RESULTS
@@ -511,19 +754,35 @@ def find_recipes(
 
 def display_results(results):
 
-    print("\n" + "=" * 70)
-    print("                 RECIPES YOU CAN MAKE")
-    print("=" * 70)
+    print(
+        "\n" + "=" * 70
+    )
+
+    print(
+        "                 RECIPES YOU CAN MAKE"
+    )
+
+    print(
+        "=" * 70
+    )
 
     if not results:
 
-        print("\nNo suitable recipes found.")
+        print(
+            "\nNo suitable recipes found."
+        )
 
-        print("\nTry:")
+        print(
+            "\nTry:"
+        )
 
-        print("  • Adding more ingredients")
+        print(
+            "  • Adding more ingredients"
+        )
 
-        print("  • Choosing another category")
+        print(
+            "  • Choosing another category"
+        )
 
         return
 
@@ -546,7 +805,12 @@ def display_results(results):
         )
 
         print(
-            f"Category: "
+            f"Recipe Category: "
+            f"{recipe['recipe_category']}"
+        )
+
+        print(
+            f"Match Level: "
             f"{recipe['category']}"
         )
 
@@ -556,19 +820,27 @@ def display_results(results):
             f"{recipe['total']}"
         )
 
-        print("\nYou have:")
+        print(
+            "\nYou have:"
+        )
 
-        for ingredient in recipe["matched"]:
+        for ingredient in recipe[
+            "matched"
+        ]:
 
             print(
                 f"  ✓ {ingredient}"
             )
 
-        print("\nMissing:")
+        print(
+            "\nMissing:"
+        )
 
         if recipe["missing"]:
 
-            for ingredient in recipe["missing"]:
+            for ingredient in recipe[
+                "missing"
+            ]:
 
                 print(
                     f"  ✗ {ingredient}"
@@ -612,8 +884,10 @@ if __name__ == "__main__":
         "\nYour ingredients: "
     )
 
-    user_ingredients = normalize_user_ingredients(
-        user_input
+    user_ingredients = (
+        normalize_user_ingredients(
+            user_input
+        )
     )
 
     if not user_ingredients:
@@ -641,6 +915,7 @@ if __name__ == "__main__":
     ).strip()
 
     if not category:
+
         category = None
 
     print(
@@ -653,4 +928,6 @@ if __name__ == "__main__":
         limit=10
     )
 
-    display_results(results)
+    display_results(
+        results
+    )
