@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+data/recipes.csv
+data/recipes.parquet
+data/recipes_cleaned.parquet
+data/recipe_index.pkl
+RecipeSense.pptx

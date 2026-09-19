@@ -1,0 +1,115 @@
+ingredient,substitute,ratio,reason
+butter,coconut oil,1:1,Good for baking and cooking
+butter,olive oil,3:4,Useful for cooking and savory recipes
+butter,vegetable shortening,1:1,Useful for baking
+milk,soy milk,1:1,Similar liquid consistency
+milk,almond milk,1:1,Useful dairy-free alternative
+milk,oat milk,1:1,Useful dairy-free alternative
+heavy cream,coconut cream,1:1,Similar creamy texture
+heavy cream,evaporated milk,1:1,Useful for creamy recipes
+sour cream,greek yogurt,1:1,Similar creamy texture
+yogurt,greek yogurt,1:1,Similar texture
+yogurt,buttermilk,1:1,Useful in baking
+egg,flaxseed meal,1:1,Useful egg substitute in some baking recipes
+egg,applesauce,1:4,Can replace egg in some baked goods
+sugar,honey,3:4,Provides sweetness with liquid consistency change
+sugar,maple syrup,3:4,Provides sweetness with liquid consistency change
+lemon juice,lime juice,1:1,Similar acidity
+lemon juice,vinegar,1:1,Provides acidity but changes flavor
+lemon,lime,1:1,Similar citrus flavor and acidity
+lemon,lime juice,1:1,Useful when lemon juice is required
+breadcrumbs,crushed crackers,1:1,Similar coating and binding function
+breadcrumbs,oats,1:1,Useful for coating and binding
+all purpose flour,oat flour,1:1,Alternative flour for some recipes
+all purpose flour,whole wheat flour,1:1,Alternative flour with stronger flavor
+cornstarch,arrowroot powder,1:1,Similar thickening function
+garlic,garlic powder,3:1,Concentrated garlic flavor
+onion,onion powder,3:1,Concentrated onion flavor
+parmesan cheese,nutritional yeast,1:1,Provides savory cheesy flavor
+soy sauce,tamari,1:1,Similar savory umami flavor
+soy sauce,coconut aminos,1:1,Alternative savory sauce
+vegetable oil,canola oil,1:1,Similar neutral cooking oil
+vegetable oil,sunflower oil,1:1,Similar neutral cooking oil
+rice,quinoa,1:1,Alternative grain with different texture
+chicken,tofu,1:1,Plant-based protein alternative
+beef,mushrooms,1:1,Useful savory plant-based alternative
+coffee,instant coffee,1:1,Useful when brewed coffee or coffee flavor is needed
+coffee,espresso powder,1:2,Provides concentrated coffee flavor
+instant coffee,espresso powder,1:2,Provides concentrated coffee flavor
+baking powder,baking soda and cream of tartar,1 tsp to 1/4 tsp baking soda plus 1/2 tsp cream of tartar,Provides leavening in suitable baking recipes
+baking powder,self rising flour,1:1,Can provide leavening when replacing part of the flour in suitable recipes
+baking soda,baking powder,1:4,Provides leavening but may change the recipe balance
+vanilla essence,vanilla extract,1:1,Similar vanilla flavor
+vanilla essence,vanilla bean,1 tsp to 1/2 vanilla bean,Provides natural vanilla flavor
+vanilla extract,vanilla essence,1:1,Similar vanilla flavor
+cocoa powder,unsweetened chocolate,3 tbsp to 1 oz chocolate,Provides chocolate flavor with additional fat
+cream cheese,greek yogurt,1:1,Similar creamy texture in some recipes
+cream cheese,cottage cheese,1:1,Useful creamy alternative when blended
+mayonnaise,greek yogurt,1:1,Similar creamy texture
+mayonnaise,sour cream,1:1,Similar creamy texture
+buttermilk,milk and lemon juice,1 cup to 1 cup milk plus 1 tbsp lemon juice,Provides similar acidity for baking
+buttermilk,milk and vinegar,1 cup to 1 cup milk plus 1 tbsp vinegar,Provides similar acidity for baking
+honey,maple syrup,1:1,Similar liquid sweetener
+honey,sugar,1:1,Alternative sweetener but liquid balance may need adjustment
+maple syrup,honey,1:1,Similar liquid sweetener
+brown sugar,white sugar,1:1,Provides sweetness but lacks molasses flavor
+brown sugar,honey,1:1,Provides sweetness with liquid consistency change
+olive oil,vegetable oil,1:1,Useful neutral cooking alternative
+olive oil,canola oil,1:1,Useful neutral cooking oil
+canola oil,vegetable oil,1:1,Similar neutral cooking oil
+ginger,ground ginger,1 tbsp to 1/8 tsp,Provides concentrated ginger flavor
+fresh ginger,ground ginger,1 tbsp to 1/8 tsp,Provides concentrated ginger flavor
+garlic powder,fresh garlic,1 tsp to 1 clove,Provides fresh garlic flavor
+onion powder,fresh onion,1 tsp to 1/2 small onion,Provides fresh onion flavor
+lime juice,lemon juice,1:1,Similar citrus acidity and flavor
+vinegar,lemon juice,1:1,Provides acidity with a different flavor
+cumin seeds,cumin powder,1:1,Same spice with a different form and texture
+cumin,cumin powder,1:1,Same spice with a different form
+cumin powder,cumin seeds,1:1,Same spice with a different form and texture
+coriander seeds,coriander powder,1:1,Same spice with a different form
+coriander,coriander powder,1:1,Same spice with a different form
+coriander powder,coriander seeds,1:1,Same spice with a different form and texture
+turmeric powder,fresh turmeric,1 tsp to 1 inch,Provides turmeric flavor and color
+fresh turmeric,turmeric powder,1 inch to 1 tsp,Provides turmeric flavor and color
+red chilli powder,cayenne pepper,1:1,Provides similar heat with a different flavor profile
+red chilli powder,red pepper flakes,1 tsp to 1 tsp,Provides similar heat with a coarser texture
+green chilli,red chilli,1:1,Provides heat but changes color and flavor
+green chilli,red pepper flakes,1:2,Provides heat with a different texture
+black pepper,white pepper,1:1,Similar peppery heat
+black pepper,green peppercorns,1:1,Similar pepper flavor with a milder profile
+mustard seeds,brown mustard seeds,1:1,Similar mustard flavor and cooking function
+mustard seeds,yellow mustard seeds,1:1,Similar mustard flavor with milder heat
+fennel seeds,anise seeds,1:1,Similar sweet aromatic flavor
+fenugreek seeds,mustard seeds,1:1,Provides bitterness and spice in savory dishes
+kasuri methi,dried fenugreek leaves,1:1,Same ingredient with equivalent dried form
+kasuri methi,fresh fenugreek leaves,1 tsp to 1 tbsp,Provides fenugreek flavor with different moisture
+cardamom,allspice,1:1,Provides warm aromatic notes but changes the flavor
+green cardamom,cardamom powder,1:1,Same spice in ground form
+cardamom powder,green cardamom,1 tsp to 4 pods,Same spice in whole form
+cinnamon,cassia,1:1,Similar warm cinnamon-like flavor
+cassia,cinnamon,1:1,Similar warm aromatic flavor
+cloves,allspice,1:1,Provides warm spicy notes with a milder profile
+bay leaf,tej patta,1:1,Similar aromatic leaf used in Indian cooking
+star anise,anise seeds,1:2,Provides a similar licorice-like aroma
+nutmeg,mace,1:1,Closely related warm aromatic spices
+mace,nutmeg,1:1,Closely related warm aromatic spices
+saffron,turmeric powder,1:1,Can provide yellow color but not the same flavor
+saffron,safflower,1:1,Can provide color with a different flavor
+garam masala,curry powder,1:1,Similar multi-spice blend but flavor varies by blend
+garam masala,ground cumin and coriander,1:1,Provides some of the core warm spice notes
+chaat masala,amchur powder,1:1,Provides tangy flavor but lacks the full spice blend
+chaat masala,lemon juice,1 tsp to 1 tsp,Provides acidity but not the complete spice flavor
+amchur powder,lemon juice,1 tsp to 1 tbsp,Provides sourness with a fresh citrus flavor
+amchur powder,tamarind paste,1:1,Provides a sour fruity flavor
+tamarind paste,amchur powder,1:1,Provides sourness with a different fruity profile
+asafoetida,garlic powder,1:2,Provides a savory aromatic note
+asafoetida,onion powder,1:2,Provides a savory aromatic note
+hing,garlic powder,1:2,Provides a savory aromatic note
+hing,onion powder,1:2,Provides a savory aromatic note
+curry leaves,bay leaf,1:1,Provides an aromatic leaf note but changes the flavor
+curry leaves,cilantro,1:2,Adds a fresh herbal note but is not flavor equivalent
+sesame seeds,sunflower seeds,1:1,Similar texture and nutty character
+sesame seeds,poppy seeds,1:1,Similar small seed texture
+poppy seeds,sesame seeds,1:1,Similar texture with a nuttier flavor
+coconut,desiccated coconut,1:1,Similar coconut flavor with less moisture
+desiccated coconut,fresh coconut,1:1,Similar coconut flavor with more moisture

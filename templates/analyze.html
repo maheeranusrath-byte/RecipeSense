@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Analyze Recipe - RecipeSense</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="header-inner">
+
+        <a href="/" class="brand">
+            <span class="logo-mark">✦</span>
+            Recipe<span>Sense</span>
+        </a>
+
+        <a href="/" class="nav-link">
+            ← Back to Home
+        </a>
+
+    </div>
+
+</header>
+
+
+<main>
+
+    <div class="container">
+
+
+        <!-- =====================================================
+             HERO SECTION
+             ===================================================== -->
+
+        <section class="hero"
+                 style="border-radius: 0 0 20px 20px;">
+
+            <div class="hero-badge">
+                🧠 RECIPE ANALYSIS
+            </div>
+
+            <h1>
+                Understand Your Recipe
+            </h1>
+
+            <p>
+                Enter a recipe and RecipeSense will identify
+                ingredients, quantities, units and cooking actions.
+            </p>
+
+        </section>
+
+
+
+        <!-- =====================================================
+             ANALYZE RECIPE CARD
+             ===================================================== -->
+
+        <section class="card"
+                 style="margin-top: 25px;">
+
+
+            <div class="card-header">
+
+                <div class="section-icon">
+                    🧠
+                </div>
+
+                <h2>
+                    Analyze Recipe
+                </h2>
+
+                <p>
+                    Enter the recipe name and paste your recipe below.
+                </p>
+
+            </div>
+
+
+            <!-- =================================================
+                 RECIPE NAME
+                 ================================================= -->
+
+            <label
+                for="recipeName"
+                style="
+                    display: block;
+                    margin-bottom: 8px;
+                    color: #245d44;
+                    font-weight: 700;
+                    font-size: 14px;
+                ">
+
+                Recipe Name
+
+            </label>
+
+
+            <input
+                type="text"
+                id="recipeName"
+                placeholder="Example: Chicken Biryani"
+                autocomplete="off"
+                style="margin-bottom: 18px;"
+            >
+
+
+            <!-- =================================================
+                 RECIPE TEXT
+                 ================================================= -->
+
+            <label
+                for="recipeText"
+                style="
+                    display: block;
+                    margin-bottom: 8px;
+                    color: #245d44;
+                    font-weight: 700;
+                    font-size: 14px;
+                ">
+
+                Recipe
+
+            </label>
+
+
+            <textarea
+                id="recipeText"
+                placeholder="Example:
+
+3 cups rice
+2 tablespoons butter
+1 onion, chopped
+4 cloves garlic, minced
+1/2 cup yogurt
+
+Heat the butter in a large pan.
+Add the onion and garlic.
+Saute until soft.
+Add the rice and cook."></textarea>
+
+
+
+            <!-- =================================================
+                 ANALYZE BUTTON
+                 ================================================= -->
+
+            <button
+                class="primary-btn"
+                onclick="analyzeRecipe()">
+
+                Analyze Recipe
+
+            </button>
+
+
+
+            <!-- =================================================
+                 STATUS
+                 ================================================= -->
+
+            <div id="status"
+                 class="status hidden">
+            </div>
+
+
+        </section>
+
+
+
+        <!-- =====================================================
+             RESULTS
+             ===================================================== -->
+
+        <section id="results"
+                 class="results-section hidden">
+
+
+            <div class="card">
+
+
+                <!-- =================================================
+                     RESULT TITLE
+                     ================================================= -->
+
+                <div
+                    style="
+                        padding-bottom: 18px;
+                        margin-bottom: 20px;
+                        border-bottom: 1px solid #e1e9e4;
+                    ">
+
+                    <h2 style="
+                        margin-bottom: 8px;
+                        color: #245d44;
+                    ">
+
+                        Recipe Analysis
+
+                    </h2>
+
+
+                    <div
+                        id="recipeNameResult"
+                        style="
+                            font-size: 24px;
+                            font-weight: 800;
+                            color: #214f3a;
+                        ">
+
+                    </div>
+
+                </div>
+
+
+
+                <!-- =================================================
+                     INGREDIENTS
+                     ================================================= -->
+
+                <div class="recipe-detail-section"
+                     style="margin-top: 0;">
+
+                    <h3>
+                        🥕 Ingredients & Quantities
+                    </h3>
+
+                    <div class="analysis-grid"
+                         id="ingredientResults">
+                    </div>
+
+                </div>
+
+
+
+                <!-- =================================================
+                     COOKING ACTIONS
+                     ================================================= -->
+
+                <div class="recipe-detail-section">
+
+                    <h3>
+                        🍳 Cooking Actions
+                    </h3>
+
+                    <div class="action-list"
+                         id="actionResults">
+                    </div>
+
+                </div>
+
+
+
+                <!-- =================================================
+                     SUBSTITUTIONS
+                     ================================================= -->
+
+                <div class="recipe-detail-section">
+
+                    <h3>
+                        🔄 Ingredient Substitutions
+                    </h3>
+
+                    <div id="substitutionResults">
+                    </div>
+
+                </div>
+
+
+            </div>
+
+        </section>
+
+
+    </div>
+
+</main>
+
+
+
+<!-- =========================================================
+     FOOTER
+     ========================================================= -->
+
+<footer>
+
+    <div class="container">
+
+        <strong>
+            RecipeSense
+        </strong>
+
+        <span>
+            AI-powered recipe understanding & ingredient intelligence
+        </span>
+
+    </div>
+
+</footer>
+
+
+
+<script>
+
+
+// ============================================================
+// ANALYZE RECIPE
+// ============================================================
+
+async function analyzeRecipe() {
+
+    const recipeName =
+        document.getElementById("recipeName")
+            .value
+            .trim();
+
+
+    const text =
+        document.getElementById("recipeText")
+            .value
+            .trim();
+
+
+    const status =
+        document.getElementById("status");
+
+
+    const results =
+        document.getElementById("results");
+
+
+
+    // --------------------------------------------------------
+    // VALIDATION
+    // --------------------------------------------------------
+
+    if (!recipeName) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            "Please enter the recipe name.";
+
+        document.getElementById("recipeName").focus();
+
+        return;
+    }
+
+
+    if (!text) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            "Please enter the recipe first.";
+
+        document.getElementById("recipeText").focus();
+
+        return;
+    }
+
+
+
+    // --------------------------------------------------------
+    // SHOW LOADING
+    // --------------------------------------------------------
+
+    status.className =
+        "status";
+
+    status.textContent =
+        "Analyzing your recipe...";
+
+    results.classList.add("hidden");
+
+
+
+    try {
+
+
+        // ----------------------------------------------------
+        // SEND RECIPE TEXT TO BACKEND
+        // ----------------------------------------------------
+
+        const response =
+            await fetch("/analyze", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    recipe_text: text
+
+                })
+
+            });
+
+
+
+        const data =
+            await response.json();
+
+
+
+        // ----------------------------------------------------
+        // ERROR CHECK
+        // ----------------------------------------------------
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error || "Analysis failed."
+            );
+
+        }
+
+
+
+        // ----------------------------------------------------
+        // DISPLAY RECIPE NAME
+        // ----------------------------------------------------
+
+        document.getElementById(
+            "recipeNameResult"
+        ).textContent =
+            "🍽️ " + recipeName;
+
+
+
+        // ----------------------------------------------------
+        // DISPLAY ANALYSIS
+        // ----------------------------------------------------
+
+        displayAnalysis(data.result);
+
+
+
+        // ----------------------------------------------------
+        // SUCCESS
+        // ----------------------------------------------------
+
+        status.className =
+            "status success";
+
+        status.textContent =
+            "Recipe analyzed successfully.";
+
+
+        results.classList.remove("hidden");
+
+
+        // Scroll smoothly to results
+
+        setTimeout(() => {
+
+            results.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+
+        }, 100);
+
+
+    }
+
+
+    catch (error) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            error.message;
+
+    }
+
+}
+
+
+
+// ============================================================
+// DISPLAY ANALYSIS
+// ============================================================
+
+function displayAnalysis(result) {
+
+
+    const ingredientContainer =
+        document.getElementById(
+            "ingredientResults"
+        );
+
+
+    const actionContainer =
+        document.getElementById(
+            "actionResults"
+        );
+
+
+    const substitutionContainer =
+        document.getElementById(
+            "substitutionResults"
+        );
+
+
+
+    ingredientContainer.innerHTML = "";
+
+    actionContainer.innerHTML = "";
+
+    substitutionContainer.innerHTML = "";
+
+
+
+    // --------------------------------------------------------
+    // INGREDIENTS
+    // --------------------------------------------------------
+
+    result.ingredients.forEach(item => {
+
+
+        const div =
+            document.createElement("div");
+
+
+        div.className =
+            "analysis-item";
+
+
+        div.innerHTML = `
+
+            <strong>
+                ${escapeHtml(item.normalized_ingredient)}
+            </strong>
+
+            <span>
+                ${escapeHtml(item.quantity || "")}
+                ${escapeHtml(item.unit || "")}
+            </span>
+
+        `;
+
+
+        ingredientContainer.appendChild(div);
+
+    });
+
+
+
+    // --------------------------------------------------------
+    // COOKING ACTIONS
+    // --------------------------------------------------------
+
+    if (result.actions.length === 0) {
+
+
+        actionContainer.innerHTML =
+            '<span class="ingredient-detail">' +
+            'No cooking actions detected.' +
+            '</span>';
+
+
+    } else {
+
+
+        result.actions.forEach(action => {
+
+
+            const span =
+                document.createElement("span");
+
+
+            span.className =
+                "action-tag";
+
+
+            span.textContent =
+                action;
+
+
+            actionContainer.appendChild(span);
+
+        });
+
+    }
+
+
+
+    // --------------------------------------------------------
+    // SUBSTITUTIONS
+    // --------------------------------------------------------
+
+    if (result.substitutions.length === 0) {
+
+
+        substitutionContainer.innerHTML =
+            '<div class="empty-state">' +
+            'No substitutions available.' +
+            '</div>';
+
+
+        return;
+    }
+
+
+
+    result.substitutions.forEach(group => {
+
+
+        const wrapper =
+            document.createElement("div");
+
+
+        wrapper.className =
+            "substitution-item";
+
+
+
+        let html = `
+
+            <strong>
+                ${escapeHtml(group.ingredient)}
+            </strong>
+
+        `;
+
+
+
+        group.substitutes.forEach(item => {
+
+
+            html += `
+
+                <div style="margin-top:12px;">
+
+                    <strong>
+                        ${escapeHtml(item.substitute)}
+                    </strong>
+
+
+                    <div class="ratio">
+
+                        Ratio:
+                        ${escapeHtml(item.ratio)}
+
+                    </div>
+
+
+                    <div class="reason">
+
+                        ${escapeHtml(item.reason)}
+
+                    </div>
+
+                </div>
+
+            `;
+
+        });
+
+
+
+        wrapper.innerHTML =
+            html;
+
+
+        substitutionContainer.appendChild(
+            wrapper
+        );
+
+    });
+
+}
+
+
+
+// ============================================================
+// HTML ESCAPE
+// ============================================================
+
+function escapeHtml(value) {
+
+    return String(value)
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+
+}
+
+
+</script>
+
+
+</body>
+
+</html>

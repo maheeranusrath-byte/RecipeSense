@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>What Can I Make? - RecipeSense</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        /* =====================================================
+           CATEGORY LAYOUT
+           ===================================================== */
+
+        .recipe-discovery-layout {
+            display: grid;
+            grid-template-columns: 230px 1fr;
+            gap: 25px;
+            align-items: start;
+            margin-top: 25px;
+        }
+
+
+        /* =====================================================
+           CATEGORY MENU
+           ===================================================== */
+
+        .category-menu {
+            background: #ffffff;
+            border: 1px solid #e0e9e4;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(36, 93, 68, 0.06);
+            position: sticky;
+            top: 100px;
+        }
+
+
+        .category-menu-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #214f3a;
+            margin-bottom: 15px;
+        }
+
+
+        .category-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+
+        .category-btn {
+            width: 100%;
+            border: 1px solid #e0e9e4;
+            border-radius: 11px;
+            padding: 12px 13px;
+            background: #ffffff;
+            color: #365047;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+
+        .category-btn:hover {
+            background: #2f855a;
+            border-color: #2f855a;
+            color: #ffffff;
+            transform: translateX(3px);
+        }
+
+
+        .category-btn.active {
+            background: #2f855a;
+            border-color: #2f855a;
+            color: #ffffff;
+        }
+
+
+        /* =====================================================
+           DISCOVERY CONTENT
+           ===================================================== */
+
+        .discovery-content {
+            min-width: 0;
+        }
+
+
+        .discovery-content .card {
+            margin-top: 0 !important;
+        }
+
+
+        .selected-category {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: #e8f5ee;
+            color: #26744f;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+
+        /* =====================================================
+           CATEGORY EMPTY MESSAGE
+           ===================================================== */
+
+        .category-hint {
+            margin-top: 12px;
+            color: #718078;
+            font-size: 13px;
+        }
+
+
+        /* =====================================================
+           RESPONSIVE
+           ===================================================== */
+
+        @media (max-width: 850px) {
+
+            .recipe-discovery-layout {
+                grid-template-columns: 1fr;
+            }
+
+
+            .category-menu {
+                position: static;
+            }
+
+
+            .category-list {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+        }
+
+
+        @media (max-width: 500px) {
+
+            .category-list {
+                grid-template-columns: 1fr;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="header-inner">
+
+        <a href="/" class="brand">
+            <span class="logo-mark">✦</span>
+            Recipe<span>Sense</span>
+        </a>
+
+        <a href="/" class="nav-link">
+            ← Back to Home
+        </a>
+
+    </div>
+
+</header>
+
+
+<main>
+
+    <div class="container">
+
+
+        <!-- =================================================
+             HERO
+             ================================================= -->
+
+        <section class="hero"
+                 style="border-radius: 0 0 20px 20px;">
+
+            <div class="hero-badge">
+                🔎 RECIPE DISCOVERY
+            </div>
+
+            <h1 id="pageTitle">
+                What Can I Make?
+            </h1>
+
+            <p id="pageDescription">
+                Select a category, enter the ingredients you have
+                and discover recipes that match them.
+            </p>
+
+        </section>
+
+
+
+        <!-- =================================================
+             CATEGORY + SEARCH LAYOUT
+             ================================================= -->
+
+        <div class="recipe-discovery-layout">
+
+
+            <!-- =================================================
+                 LEFT CATEGORY MENU
+                 ================================================= -->
+
+            <aside class="category-menu">
+
+
+                <div class="category-menu-title">
+                    🍽️ Recipe Categories
+                </div>
+
+
+                <div class="category-list">
+
+
+                    <button
+                        type="button"
+                        class="category-btn active"
+                        data-category="Main Course"
+                        onclick="selectCategory(this)">
+
+                        🍛 Main Course
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Starters"
+                        onclick="selectCategory(this)">
+
+                        🥟 Starters
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Desserts"
+                        onclick="selectCategory(this)">
+
+                        🍰 Desserts
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Shakes"
+                        onclick="selectCategory(this)">
+
+                        🥤 Shakes
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Salads"
+                        onclick="selectCategory(this)">
+
+                        🥗 Salads
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Soups"
+                        onclick="selectCategory(this)">
+
+                        🍲 Soups
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="category-btn"
+                        data-category="Snacks"
+                        onclick="selectCategory(this)">
+
+                        🍝 Snacks
+
+                    </button>
+
+
+                </div>
+
+
+            </aside>
+
+
+
+            <!-- =================================================
+                 MAIN DISCOVERY CONTENT
+                 ================================================= -->
+
+            <div class="discovery-content">
+
+
+                <!-- =================================================
+                     INGREDIENT INPUT
+                     ================================================= -->
+
+                <section class="card">
+
+
+                    <div class="card-header">
+
+
+                        <div class="section-icon">
+                            🔎
+                        </div>
+
+
+                        <h2 id="inputTitle">
+                            Main Course
+                        </h2>
+
+
+                        <p id="inputDescription">
+                            Enter the ingredients you have and
+                            discover matching main course recipes.
+                        </p>
+
+
+                        <span
+                            class="selected-category"
+                            id="selectedCategory">
+
+                            Main Course
+
+                        </span>
+
+
+                    </div>
+
+
+
+                    <input
+                        type="text"
+                        id="ingredientsInput"
+                        placeholder="Example: chicken, rice, onion, garlic, yogurt">
+
+
+                    <p class="category-hint">
+                        💡 Separate multiple ingredients with commas.
+                    </p>
+
+
+                    <button
+                        class="primary-btn"
+                        onclick="findRecipes()">
+
+                        Find Recipes
+
+                    </button>
+
+
+                    <div id="status"
+                         class="status hidden">
+                    </div>
+
+
+                </section>
+
+
+
+                <!-- =================================================
+                     RESULTS
+                     ================================================= -->
+
+                <section id="results"
+                         class="results-section hidden">
+
+                    <h2 id="resultsTitle">
+                        Recommended Recipes
+                    </h2>
+
+                    <div id="recipeResults">
+                    </div>
+
+                </section>
+
+
+            </div>
+
+
+        </div>
+
+
+    </div>
+
+</main>
+
+
+<footer>
+
+    <div class="container">
+
+        <strong>
+            RecipeSense
+        </strong>
+
+        <span>
+            AI-powered recipe understanding & ingredient intelligence
+        </span>
+
+    </div>
+
+</footer>
+
+
+
+<!-- =========================================================
+     RECIPE MODAL
+     ========================================================= -->
+
+<div id="recipeModal"
+     class="recipe-modal hidden">
+
+
+    <div class="recipe-modal-overlay"
+         onclick="closeRecipeModal()">
+    </div>
+
+
+    <div class="recipe-modal-box">
+
+
+        <button
+            class="recipe-modal-close"
+            onclick="closeRecipeModal()">
+
+            ×
+
+        </button>
+
+
+        <div id="recipeDetails">
+
+            <div class="recipe-detail-loading">
+
+                <div class="loading-spinner"></div>
+
+                <p style="margin-top:15px;">
+                    Loading recipe...
+                </p>
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+
+// ============================================================
+// CURRENT CATEGORY
+// ============================================================
+
+let selectedCategory = "Main Course";
+
+
+
+// ============================================================
+// SELECT CATEGORY
+// ============================================================
+
+function selectCategory(button) {
+
+
+    // --------------------------------------------------------
+    // Remove active state from all buttons
+    // --------------------------------------------------------
+
+    document
+        .querySelectorAll(".category-btn")
+        .forEach(btn => {
+
+            btn.classList.remove("active");
+
+        });
+
+
+    // --------------------------------------------------------
+    // Activate selected button
+    // --------------------------------------------------------
+
+    button.classList.add("active");
+
+
+    // --------------------------------------------------------
+    // Store selected category
+    // --------------------------------------------------------
+
+    selectedCategory =
+        button.dataset.category;
+
+
+    // --------------------------------------------------------
+    // Update page text
+    // --------------------------------------------------------
+
+    document.getElementById(
+        "pageTitle"
+    ).textContent =
+        "What Can I Make?";
+
+
+    document.getElementById(
+        "pageDescription"
+    ).textContent =
+        `Select ingredients and discover ${selectedCategory.toLowerCase()} recipes that match them.`;
+
+
+    document.getElementById(
+        "inputTitle"
+    ).textContent =
+        selectedCategory;
+
+
+    document.getElementById(
+        "inputDescription"
+    ).textContent =
+        `Enter the ingredients you have and discover matching ${selectedCategory.toLowerCase()} recipes.`;
+
+
+    document.getElementById(
+        "selectedCategory"
+    ).textContent =
+        selectedCategory;
+
+
+    document.getElementById(
+        "resultsTitle"
+    ).textContent =
+        `Recommended ${selectedCategory} Recipes`;
+
+
+    // --------------------------------------------------------
+    // Update placeholder
+    // --------------------------------------------------------
+
+    document.getElementById(
+        "ingredientsInput"
+    ).placeholder =
+        getCategoryPlaceholder(
+            selectedCategory
+        );
+
+
+    // --------------------------------------------------------
+    // Clear previous results
+    // --------------------------------------------------------
+
+    document.getElementById(
+        "results"
+    ).classList.add("hidden");
+
+
+    document.getElementById(
+        "recipeResults"
+    ).innerHTML = "";
+
+
+    document.getElementById(
+        "status"
+    ).className =
+        "status hidden";
+
+}
+
+
+
+// ============================================================
+// CATEGORY PLACEHOLDERS
+// ============================================================
+
+function getCategoryPlaceholder(category) {
+
+    const placeholders = {
+
+        "Main Course":
+            "Example: chicken, rice, onion, garlic",
+
+        "Starters":
+            "Example: potato, cheese, bread crumbs, onion",
+
+        "Desserts":
+            "Example: milk, sugar, flour, egg, butter",
+
+        "Shakes":
+            "Example: milk, banana, sugar, chocolate",
+
+        "Salads":
+            "Example: cucumber, tomato, onion, lettuce",
+
+        "Soups":
+            "Example: carrot, onion, tomato, garlic",
+
+        "Snacks":
+            "Example: potato, cheese, bread, onion"
+
+    };
+
+
+    return (
+        placeholders[category] ||
+        "Example: chicken, rice, onion, garlic"
+    );
+
+}
+
+
+
+// ============================================================
+// FIND RECIPES
+// ============================================================
+
+async function findRecipes() {
+
+
+    const input =
+        document.getElementById(
+            "ingredientsInput"
+        );
+
+
+    const status =
+        document.getElementById(
+            "status"
+        );
+
+
+    const results =
+        document.getElementById(
+            "results"
+        );
+
+
+    const container =
+        document.getElementById(
+            "recipeResults"
+        );
+
+
+    const ingredients =
+        input.value.trim();
+
+
+    // --------------------------------------------------------
+    // Validation
+    // --------------------------------------------------------
+
+    if (!ingredients) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            `Please enter ingredients for ${selectedCategory}.`;
+
+        input.focus();
+
+        return;
+
+    }
+
+
+    // --------------------------------------------------------
+    // Loading
+    // --------------------------------------------------------
+
+    status.className =
+        "status";
+
+    status.textContent =
+        `Finding ${selectedCategory.toLowerCase()} recipes...`;
+
+
+    results.classList.add(
+        "hidden"
+    );
+
+
+    container.innerHTML = "";
+
+
+
+    try {
+
+
+        // ----------------------------------------------------
+        // API REQUEST
+        // ----------------------------------------------------
+
+        const response =
+            await fetch(
+                "/find-recipes",
+                {
+
+                    method: "POST",
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json"
+
+                    },
+
+                    body: JSON.stringify({
+
+                        ingredients:
+                            ingredients,
+
+                        category:
+                            selectedCategory
+
+                    })
+
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+
+        // ----------------------------------------------------
+        // ERROR CHECK
+        // ----------------------------------------------------
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                "Recipe search failed."
+            );
+
+        }
+
+
+
+        // ----------------------------------------------------
+        // DISPLAY RESULTS
+        // ----------------------------------------------------
+
+        displayRecipes(
+            data.results
+        );
+
+
+        status.className =
+            "status success";
+
+
+        status.textContent =
+            `Found ${data.results.length} matching ${selectedCategory.toLowerCase()} recipes.`;
+
+
+        results.classList.remove(
+            "hidden"
+        );
+
+
+        // Scroll to results
+
+        setTimeout(() => {
+
+            results.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+
+        }, 100);
+
+
+    }
+
+
+    catch (error) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            error.message;
+
+    }
+
+}
+
+
+
+// ============================================================
+// DISPLAY RECIPES
+// ============================================================
+
+function displayRecipes(recipes) {
+
+
+    const container =
+        document.getElementById(
+            "recipeResults"
+        );
+
+
+    if (!recipes || !recipes.length) {
+
+        container.innerHTML = `
+
+            <div class="empty-state">
+
+                No matching ${escapeHtml(
+                    selectedCategory.toLowerCase()
+                )} recipes found.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    recipes.forEach(
+        (recipe, index) => {
+
+
+            // ------------------------------------------------
+            // Match percentage
+            // ------------------------------------------------
+
+            const percentage =
+                Number(
+                    recipe.percentage || 0
+                );
+
+
+            const safePercentage =
+                Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        percentage
+                    )
+                );
+
+
+            const matchedCount =
+                Number(
+                    recipe.matched_count || 0
+                );
+
+
+            const totalIngredients =
+                Number(
+                    recipe.total || 0
+                );
+
+
+            const matched =
+                Array.isArray(
+                    recipe.matched
+                )
+                ?
+                recipe.matched
+                :
+                [];
+
+
+            const missing =
+                Array.isArray(
+                    recipe.missing
+                )
+                ?
+                recipe.missing
+                :
+                [];
+
+
+            // ------------------------------------------------
+            // Match category
+            // ------------------------------------------------
+
+            let matchCategory =
+                "Low match";
+
+
+            if (
+                safePercentage >= 75
+            ) {
+
+                matchCategory =
+                    "Excellent match";
+
+            }
+            else if (
+                safePercentage >= 50
+            ) {
+
+                matchCategory =
+                    "Good match";
+
+            }
+            else if (
+                safePercentage >= 25
+            ) {
+
+                matchCategory =
+                    "Partial match";
+
+            }
+
+
+
+            // ------------------------------------------------
+            // Recipe card
+            // ------------------------------------------------
+
+            const card =
+                document.createElement(
+                    "div"
+                );
+
+
+            card.className =
+                "recipe-result";
+
+
+            card.innerHTML = `
+
+                <div class="recipe-card-header">
+
+                    <div>
+
+                        <span class="recipe-number">
+                            ${index + 1}
+                        </span>
+
+                        <h3 class="recipe-title">
+
+                            ${escapeHtml(
+                                recipe.name
+                            )}
+
+                        </h3>
+
+                    </div>
+
+
+                    <span class="match-badge">
+
+                        ${safePercentage.toFixed(1)}%
+
+                    </span>
+
+                </div>
+
+
+
+                <div class="match-bar">
+
+                    <div
+                        class="match-bar-fill"
+                        style="width:${safePercentage}%">
+                    </div>
+
+                </div>
+
+
+
+                <div class="match-label">
+
+                    ${matchCategory}
+
+                    &nbsp; • &nbsp;
+
+                    ${matchedCount}
+
+                    /
+
+                    ${totalIngredients}
+
+                    ingredients available
+
+                </div>
+
+
+
+                <div class="recipe-columns">
+
+
+                    <div>
+
+                        <h4>
+                            ✓ You Have
+                        </h4>
+
+                        <div>
+
+                            ${
+                                matched.length > 0
+
+                                ?
+
+                                matched
+                                    .map(
+                                        item =>
+                                        `
+                                        <span
+                                            class="matched-item">
+
+                                            ✓
+                                            ${escapeHtml(item)}
+
+                                        </span>
+                                        `
+                                    )
+                                    .join("")
+
+                                :
+
+                                `
+                                <span
+                                    class="matched-item">
+
+                                    No matching ingredients
+
+                                </span>
+                                `
+                            }
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div>
+
+                        <h4>
+                            ✗ Missing
+                        </h4>
+
+                        <div>
+
+                            ${
+                                missing.length > 0
+
+                                ?
+
+                                missing
+                                    .map(
+                                        item =>
+                                        `
+                                        <span
+                                            class="missing-item">
+
+                                            ${escapeHtml(item)}
+
+                                        </span>
+                                        `
+                                    )
+                                    .join("")
+
+                                :
+
+                                `
+                                <span class="all-have">
+
+                                    ✓ You have everything!
+
+                                </span>
+                                `
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                </div>
+
+
+
+                <button
+                    class="view-recipe-btn"
+                    onclick="viewRecipe(
+                        '${escapeAttribute(recipe.name)}'
+                    )">
+
+                    📖 View Recipe
+
+                </button>
+
+            `;
+
+
+            container.appendChild(
+                card
+            );
+
+        }
+    );
+
+}
+
+
+
+// ============================================================
+// VIEW RECIPE
+// ============================================================
+
+async function viewRecipe(name) {
+
+
+    const modal =
+        document.getElementById(
+            "recipeModal"
+        );
+
+
+    const details =
+        document.getElementById(
+            "recipeDetails"
+        );
+
+
+    modal.classList.remove(
+        "hidden"
+    );
+
+
+    details.innerHTML = `
+
+        <div class="recipe-detail-loading">
+
+            <div class="loading-spinner"></div>
+
+            <p style="margin-top:15px;">
+                Loading recipe...
+            </p>
+
+        </div>
+
+    `;
+
+
+    try {
+
+
+        const response =
+            await fetch(
+                "/recipe-details?name=" +
+                encodeURIComponent(name)
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                "Could not load recipe."
+            );
+
+        }
+
+
+        displayRecipeDetails(
+            data.result
+        );
+
+
+    }
+    catch (error) {
+
+        details.innerHTML = `
+
+            <div class="empty-state">
+
+                ${escapeHtml(
+                    error.message
+                )}
+
+            </div>
+
+        `;
+
+    }
+
+}
+
+
+
+// ============================================================
+// DISPLAY RECIPE DETAILS
+// ============================================================
+
+function displayRecipeDetails(recipe) {
+
+
+    const details =
+        document.getElementById(
+            "recipeDetails"
+        );
+
+
+    const ingredients =
+        recipe.ingredients || [];
+
+
+    const instructions =
+        recipe.instructions || [];
+
+
+    details.innerHTML = `
+
+        <div class="recipe-detail-header">
+
+
+            ${
+                recipe.category
+
+                ?
+
+                `
+                <span class="detail-category">
+
+                    ${escapeHtml(
+                        recipe.category
+                    )}
+
+                </span>
+                `
+
+                :
+
+                ""
+            }
+
+
+            <h2>
+
+                ${escapeHtml(
+                    recipe.name
+                )}
+
+            </h2>
+
+
+        </div>
+
+
+
+        ${
+            recipe.description
+
+            ?
+
+            `
+            <div class="recipe-description">
+
+                ${escapeHtml(
+                    recipe.description
+                )}
+
+            </div>
+            `
+
+            :
+
+            ""
+        }
+
+
+
+        <div class="recipe-meta">
+
+
+            <div>
+
+                <span>
+                    ⏱️
+                </span>
+
+                <strong>
+                    Prep Time
+                </strong>
+
+                <small>
+
+                    ${escapeHtml(
+                        recipe.prep_time ||
+                        "N/A"
+                    )}
+
+                </small>
+
+            </div>
+
+
+
+            <div>
+
+                <span>
+                    🔥
+                </span>
+
+                <strong>
+                    Cook Time
+                </strong>
+
+                <small>
+
+                    ${escapeHtml(
+                        recipe.cook_time ||
+                        "N/A"
+                    )}
+
+                </small>
+
+            </div>
+
+
+
+            <div>
+
+                <span>
+                    🍽️
+                </span>
+
+                <strong>
+                    Servings
+                </strong>
+
+                <small>
+
+                    ${escapeHtml(
+                        recipe.servings ||
+                        "N/A"
+                    )}
+
+                </small>
+
+            </div>
+
+
+
+            <div>
+
+                <span>
+                    ⚡
+                </span>
+
+                <strong>
+                    Calories
+                </strong>
+
+                <small>
+
+                    ${escapeHtml(
+                        recipe.calories ||
+                        "N/A"
+                    )}
+
+                </small>
+
+            </div>
+
+
+        </div>
+
+
+
+        <!-- =================================================
+             INGREDIENTS
+             ================================================= -->
+
+        <div class="recipe-detail-section">
+
+            <h3>
+                🥕 Ingredients
+            </h3>
+
+
+            <ul class="recipe-ingredients">
+
+
+                ${
+                    ingredients.length > 0
+
+                    ?
+
+                    ingredients
+                        .map(
+                            item =>
+                            `
+                            <li>
+
+                                <span>
+                                    ✓
+                                </span>
+
+                                ${escapeHtml(item)}
+
+                            </li>
+                            `
+                        )
+                        .join("")
+
+                    :
+
+                    `
+                    <li>
+                        Ingredient information unavailable.
+                    </li>
+                    `
+                }
+
+
+            </ul>
+
+        </div>
+
+
+
+        <!-- =================================================
+             INSTRUCTIONS
+             ================================================= -->
+
+        <div class="recipe-detail-section">
+
+            <h3>
+                👨‍🍳 Cooking Instructions
+            </h3>
+
+
+            <ol class="recipe-instructions">
+
+
+                ${
+                    instructions.length > 0
+
+                    ?
+
+                    instructions
+                        .map(
+                            (item, index) =>
+                            `
+                            <li>
+
+                                <span class="step-number">
+
+                                    ${index + 1}
+
+                                </span>
+
+                                <span>
+
+                                    ${escapeHtml(item)}
+
+                                </span>
+
+                            </li>
+                            `
+                        )
+                        .join("")
+
+                    :
+
+                    `
+                    <li>
+                        Cooking instructions are not available.
+                    </li>
+                    `
+                }
+
+
+            </ol>
+
+        </div>
+
+
+
+        <div class="recipe-source-note">
+
+            Recipe information sourced from
+            the Food.com dataset used by RecipeSense.
+
+        </div>
+
+    `;
+
+}
+
+
+
+// ============================================================
+// CLOSE RECIPE MODAL
+// ============================================================
+
+function closeRecipeModal() {
+
+    document.getElementById(
+        "recipeModal"
+    ).classList.add(
+        "hidden"
+    );
+
+}
+
+
+
+// ============================================================
+// ESCAPE HTML
+// ============================================================
+
+function escapeHtml(value) {
+
+    return String(value)
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+
+}
+
+
+
+// ============================================================
+// ESCAPE ATTRIBUTE
+// ============================================================
+
+function escapeAttribute(value) {
+
+    return String(value)
+
+        .replaceAll(
+            "\\",
+            "\\\\"
+        )
+
+        .replaceAll(
+            "'",
+            "\\'"
+        );
+
+}
+
+
+
+// ============================================================
+// ENTER KEY SUPPORT
+// ============================================================
+
+document
+    .getElementById(
+        "ingredientsInput"
+    )
+    .addEventListener(
+        "keydown",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                event.preventDefault();
+
+                findRecipes();
+
+            }
+
+        }
+    );
+
+</script>
+
+
+</body>
+
+</html>

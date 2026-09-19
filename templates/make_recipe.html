@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>
+        What Do You Want to Make? - RecipeSense
+    </title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="header-inner">
+
+        <a href="/" class="brand">
+
+            <span class="logo-mark">
+                ✦
+            </span>
+
+            Recipe<span>Sense</span>
+
+        </a>
+
+
+        <a href="/"
+           class="nav-link">
+
+            ← Back to Home
+
+        </a>
+
+    </div>
+
+</header>
+
+
+
+<main>
+
+    <div class="container">
+
+
+        <!-- =================================================
+             HERO
+             ================================================= -->
+
+        <section class="hero"
+                 style="border-radius:0 0 20px 20px;">
+
+            <div class="hero-badge">
+                🍳 DISH RECIPE FINDER
+            </div>
+
+            <h1>
+                What Do You Want to Make?
+            </h1>
+
+            <p>
+                Enter a dish name and RecipeSense will find
+                its ingredients, quantities and substitutions.
+            </p>
+
+        </section>
+
+
+
+        <!-- =================================================
+             SEARCH CARD
+             ================================================= -->
+
+        <section class="card"
+                 style="margin-top:25px;">
+
+            <div class="card-header">
+
+                <div class="section-icon">
+                    🍳
+                </div>
+
+                <h2>
+                    Enter Your Dish
+                </h2>
+
+                <p>
+                    Type the name of the dish you want to prepare.
+                </p>
+
+            </div>
+
+
+            <input
+                type="text"
+                id="dishInput"
+                placeholder="Example: Chicken Biryani">
+
+
+            <button
+                class="primary-btn"
+                onclick="findDish()">
+
+                Find My Recipe
+
+            </button>
+
+
+            <div id="status"
+                 class="status hidden">
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             RESULT
+             ================================================= -->
+
+        <section id="recipeResult"
+                 class="results-section hidden">
+
+        </section>
+
+
+    </div>
+
+</main>
+
+
+
+<footer>
+
+    <div class="container">
+
+        <strong>
+            RecipeSense
+        </strong>
+
+        <span>
+            AI-powered recipe understanding & ingredient intelligence
+        </span>
+
+    </div>
+
+</footer>
+
+
+
+<script>
+
+
+// ============================================================
+// FIND DISH
+// ============================================================
+
+async function findDish() {
+
+    const input =
+        document.getElementById(
+            "dishInput"
+        );
+
+
+    const status =
+        document.getElementById(
+            "status"
+        );
+
+
+    const resultSection =
+        document.getElementById(
+            "recipeResult"
+        );
+
+
+    const dish =
+        input.value.trim();
+
+
+    if (!dish) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            "Please enter a dish name.";
+
+        return;
+
+    }
+
+
+    status.className =
+        "status";
+
+    status.textContent =
+        "Searching for your recipe...";
+
+
+    resultSection.classList.add(
+        "hidden"
+    );
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/make-recipe",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        dish: dish
+                    })
+
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error ||
+                "Recipe not found."
+            );
+
+        }
+
+
+        displayRecipe(
+            data.recipe
+        );
+
+
+        status.className =
+            "status success";
+
+        status.textContent =
+            "Recipe found successfully!";
+
+
+        resultSection.classList.remove(
+            "hidden"
+        );
+
+    }
+    catch (error) {
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            error.message;
+
+    }
+
+}
+
+
+
+// ============================================================
+// DISPLAY RECIPE
+// ============================================================
+
+function displayRecipe(recipe) {
+
+    const container =
+        document.getElementById(
+            "recipeResult"
+        );
+
+
+    let ingredientsHTML = "";
+
+
+    recipe.ingredients.forEach(
+        ingredient => {
+
+            let substitutionsHTML = "";
+
+
+            if (
+                ingredient.substitutions &&
+                ingredient.substitutions.length > 0
+            ) {
+
+                substitutionsHTML =
+                    ingredient.substitutions
+                        .map(
+                            item => `
+
+                                <div class="substitution-item"
+                                     style="margin-top:10px;">
+
+                                    <strong>
+                                        🔄 Substitute:
+                                        ${escapeHtml(
+                                            item.substitute
+                                        )}
+                                    </strong>
+
+                                    <div class="reason">
+
+                                        Ratio:
+                                        <strong>
+                                            ${escapeHtml(
+                                                item.ratio
+                                            )}
+                                        </strong>
+
+                                        <br>
+
+                                        ${escapeHtml(
+                                            item.reason
+                                        )}
+
+                                    </div>
+
+                                </div>
+
+                            `
+                        )
+                        .join("");
+
+            }
+            else {
+
+                substitutionsHTML = `
+
+                    <div class="reason"
+                         style="margin-top:8px;">
+
+                        No substitution available.
+
+                    </div>
+
+                `;
+
+            }
+
+
+            ingredientsHTML += `
+
+                <div class="ingredient-item">
+
+                    <div class="ingredient-name">
+
+                        ${escapeHtml(
+                            ingredient.display
+                        )}
+
+                    </div>
+
+                    ${substitutionsHTML}
+
+                </div>
+
+            `;
+
+        }
+    );
+
+
+
+    let instructionsHTML = "";
+
+
+    if (
+        recipe.instructions &&
+        recipe.instructions.length > 0
+    ) {
+
+        instructionsHTML =
+            recipe.instructions
+                .map(
+                    (instruction, index) => `
+
+                        <li>
+
+                            <span class="step-number">
+                                ${index + 1}
+                            </span>
+
+                            <span>
+                                ${escapeHtml(
+                                    instruction
+                                )}
+                            </span>
+
+                        </li>
+
+                    `
+                )
+                .join("");
+
+    }
+    else {
+
+        instructionsHTML = `
+
+            <li>
+
+                Cooking instructions are not available.
+
+            </li>
+
+        `;
+
+    }
+
+
+
+    container.innerHTML = `
+
+        <div class="card">
+
+
+            <!-- ==========================================
+                 RECIPE HEADER
+                 ========================================== -->
+
+            <div class="recipe-detail-header">
+
+
+                ${
+                    recipe.category
+
+                    ?
+
+                    `
+                    <span class="detail-category">
+
+                        ${escapeHtml(
+                            recipe.category
+                        )}
+
+                    </span>
+                    `
+
+                    :
+
+                    ""
+                }
+
+
+                <h2>
+
+                    ${escapeHtml(
+                        recipe.name
+                    )}
+
+                </h2>
+
+
+            </div>
+
+
+
+            ${
+                recipe.description
+
+                ?
+
+                `
+                <div class="recipe-description">
+
+                    ${escapeHtml(
+                        recipe.description
+                    )}
+
+                </div>
+                `
+
+                :
+
+                ""
+            }
+
+
+
+            <!-- ==========================================
+                 META
+                 ========================================== -->
+
+            <div class="recipe-meta">
+
+
+                <div>
+
+                    <span>
+                        ⏱️
+                    </span>
+
+                    <strong>
+                        Prep Time
+                    </strong>
+
+                    <small>
+                        ${escapeHtml(
+                            recipe.prep_time ||
+                            "N/A"
+                        )}
+                    </small>
+
+                </div>
+
+
+
+                <div>
+
+                    <span>
+                        🔥
+                    </span>
+
+                    <strong>
+                        Cook Time
+                    </strong>
+
+                    <small>
+                        ${escapeHtml(
+                            recipe.cook_time ||
+                            "N/A"
+                        )}
+                    </small>
+
+                </div>
+
+
+
+                <div>
+
+                    <span>
+                        🍽️
+                    </span>
+
+                    <strong>
+                        Servings
+                    </strong>
+
+                    <small>
+                        ${escapeHtml(
+                            recipe.servings ||
+                            "N/A"
+                        )}
+                    </small>
+
+                </div>
+
+
+
+                <div>
+
+                    <span>
+                        ⚡
+                    </span>
+
+                    <strong>
+                        Calories
+                    </strong>
+
+                    <small>
+                        ${escapeHtml(
+                            recipe.calories ||
+                            "N/A"
+                        )}
+                    </small>
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- ==========================================
+                 INGREDIENTS
+                 ========================================== -->
+
+            <div class="recipe-detail-section">
+
+                <h3>
+                    🥕 Ingredients & Substitutions
+                </h3>
+
+
+                <div class="ingredient-analysis">
+
+                    ${ingredientsHTML}
+
+                </div>
+
+            </div>
+
+
+
+            <!-- ==========================================
+                 INSTRUCTIONS
+                 ========================================== -->
+
+            <div class="recipe-detail-section">
+
+                <h3>
+                    👨‍🍳 Cooking Instructions
+                </h3>
+
+
+                <ol class="recipe-instructions">
+
+                    ${instructionsHTML}
+
+                </ol>
+
+            </div>
+
+
+
+            <div class="recipe-source-note">
+
+                Recipe information sourced from the
+                Food.com dataset used by RecipeSense.
+
+            </div>
+
+
+        </div>
+
+    `;
+
+}
+
+
+
+// ============================================================
+// ESCAPE HTML
+// ============================================================
+
+function escapeHtml(value) {
+
+    return String(value)
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+
+}
+
+
+
+// ============================================================
+// ENTER KEY
+// ============================================================
+
+document
+    .getElementById(
+        "dishInput"
+    )
+    .addEventListener(
+        "keydown",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                event.preventDefault();
+
+                findDish();
+
+            }
+
+        }
+    );
+
+
+</script>
+
+
+</body>
+
+</html>
