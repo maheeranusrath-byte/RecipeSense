@@ -1,17 +1,58 @@
+# ============================================================
+# RecipeSense
+# AI Recipe Understanding & Ingredient Substitution System
+# ============================================================
+
 from flask import Flask, render_template, request, jsonify
+
 import pandas as pd
 import numpy as np
+import sqlite3
+import time
+
 from pathlib import Path
+from difflib import SequenceMatcher
 
-from nlp.recipe_parser import extract_ingredient_info, extract_actions
+from nlp.recipe_parser import extract_ingredient_info
 from nlp.substitution_engine import get_substitutes
-from recipe_search import find_recipes, normalize_user_ingredients
 
+from recipe_search import (
+    find_recipes,
+    normalize_user_ingredients
+)
+
+
+# ============================================================
+# FLASK APP
+# ============================================================
 
 app = Flask(__name__)
 
+
+# ============================================================
+# PATHS
+# ============================================================
+
 PROJECT_DIR = Path(__file__).resolve().parent
-DATA_FILE = PROJECT_DIR / "data" / "recipes_cleaned.parquet"
+DATA_DIR = PROJECT_DIR / "data"
+
+DATA_FILE = DATA_DIR / "recipes_cleaned.parquet"
+SQLITE_FILE = DATA_DIR / "recipe_index.db"
+
+
+# ============================================================
+# SQLITE CONNECTION
+# ============================================================
+
+def get_sqlite_connection():
+
+    connection = sqlite3.connect(
+        SQLITE_FILE
+    )
+
+    connection.row_factory = sqlite3.Row
+
+    return connection
 
 
 # ============================================================
@@ -19,34 +60,37 @@ DATA_FILE = PROJECT_DIR / "data" / "recipes_cleaned.parquet"
 # ============================================================
 
 def make_json_safe(value):
-    """
-    Convert Python sets, NumPy values and arrays into
-    JSON-serializable Python objects.
-    """
 
     if isinstance(value, dict):
 
         return {
-            str(key): make_json_safe(item)
-            for key, item in value.items()
+            key: make_json_safe(val)
+            for key, val in value.items()
         }
 
-
-    if isinstance(value, set):
-
-        return sorted(
-            make_json_safe(item)
-            for item in value
-        )
-
-
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
 
         return [
             make_json_safe(item)
             for item in value
         ]
 
+    if isinstance(value, tuple):
+
+        return [
+            make_json_safe(item)
+            for item in value
+        ]
+
+    if isinstance(value, set):
+
+        return [
+            make_json_safe(item)
+            for item in sorted(
+                value,
+                key=lambda x: str(x)
+            )
+        ]
 
     if isinstance(value, np.ndarray):
 
@@ -55,32 +99,37 @@ def make_json_safe(value):
             for item in value.tolist()
         ]
 
-
     if isinstance(value, np.integer):
 
         return int(value)
 
-
     if isinstance(value, np.floating):
+
+        if np.isnan(value):
+
+            return None
 
         return float(value)
 
+    if value is None:
 
-    if isinstance(value, np.bool_):
+        return None
 
-        return bool(value)
+    try:
 
+        if pd.isna(value):
 
-    if pd.isna(value):
+            return None
 
-        return ""
+    except Exception:
 
+        pass
 
     return value
 
 
 # ============================================================
-# HOME PAGE
+# PAGE ROUTES
 # ============================================================
 
 @app.route("/")
@@ -90,10 +139,6 @@ def home():
         "index.html"
     )
 
-
-# ============================================================
-# FEATURE PAGES
-# ============================================================
 
 @app.route("/analyze-page")
 def analyze_page():
@@ -119,814 +164,1493 @@ def substitute_page():
     )
 
 
+@app.route("/make-recipe-page")
+def make_recipe_page():
+
+    return render_template(
+        "make_recipe.html"
+    )
+
+
 # ============================================================
-# ANALYZE RECIPE API
+# ANALYZE RECIPE
 # ============================================================
 
-@app.route(
-    "/analyze",
-    methods=["POST"]
-)
-def analyze():
+@app.route("/analyze", methods=["POST"])
+def analyze_recipe():
 
     try:
 
         data = request.get_json()
 
-
         if not data:
 
             return jsonify({
                 "success": False,
-                "error": "No data received."
-            }), 400
-
+                "message": "No recipe data received."
+            })
 
         recipe_text = data.get(
-            "recipe_text",
+            "recipe",
             ""
         ).strip()
-
 
         if not recipe_text:
 
             return jsonify({
                 "success": False,
-                "error": "Please enter a recipe."
-            }), 400
+                "message": "Please enter a recipe."
+            })
 
+        ingredients = []
 
-        ingredients = extract_ingredient_info(
-            recipe_text
+        for line in recipe_text.split("\n"):
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            parsed = extract_ingredient_info(
+                line
+            )
+
+            if parsed:
+
+                ingredients.extend(
+                    parsed
+                )
+
+        # ----------------------------------------------------
+        # Cooking actions
+        # ----------------------------------------------------
+
+        action_words = [
+
+            "add",
+            "bake",
+            "beat",
+            "boil",
+            "chop",
+            "combine",
+            "cook",
+            "cut",
+            "fry",
+            "grill",
+            "heat",
+            "knead",
+            "marinate",
+            "melt",
+            "mix",
+            "peel",
+            "pour",
+            "process",
+            "roast",
+            "saute",
+            "sauté",
+            "season",
+            "serve",
+            "simmer",
+            "slice",
+            "spread",
+            "sprinkle",
+            "stir",
+            "strain",
+            "toss",
+            "transfer",
+            "whisk",
+            "freeze",
+            "blend",
+            "fold",
+            "drain",
+            "grate",
+            "roll"
+
+        ]
+
+        lower_text = recipe_text.lower()
+
+        cooking_actions = []
+
+        for action in action_words:
+
+            if action in lower_text:
+
+                cooking_actions.append(
+                    action
+                )
+
+        cooking_actions = sorted(
+            list(
+                set(cooking_actions)
+            )
         )
 
-        actions = extract_actions(
-            recipe_text
-        )
+        # ----------------------------------------------------
+        # Substitutions
+        # ----------------------------------------------------
 
+        substitution_results = []
 
-        ingredient_results = []
+        for ingredient in ingredients:
 
+            normalized = ingredient.get(
+                "normalized_ingredient",
+                ingredient.get(
+                    "ingredient",
+                    ""
+                )
+            )
 
-        for item in ingredients:
+            substitutes = get_substitutes(
+                normalized
+            )
 
-            ingredient_results.append({
+            substitution_results.append({
 
-                "ingredient":
-                    item["ingredient"],
+                "ingredient": normalized,
 
-                "normalized_ingredient":
-                    item["normalized_ingredient"],
-
-                "quantity":
-                    item["quantity"],
-
-                "unit":
-                    item["unit"],
-
-                "original":
-                    item["ingredient"]
+                "substitutes": substitutes
 
             })
 
+        return jsonify(
+            make_json_safe({
 
-        substitutions = []
+                "success": True,
 
-        seen = set()
+                "ingredients": ingredients,
 
+                "actions": cooking_actions,
 
-        for item in ingredients:
+                "substitutions": substitution_results
 
-            normalized = item[
-                "normalized_ingredient"
-            ]
+            })
+        )
 
+    except Exception as error:
 
-            if not normalized:
-                continue
-
-
-            if normalized in seen:
-                continue
-
-
-            seen.add(
-                normalized
-            )
-
-
-            matches = get_substitutes(
-                normalized
-            )
-
-
-            if matches:
-
-                substitutions.append({
-
-                    "ingredient":
-                        normalized,
-
-                    "quantity":
-                        item["quantity"],
-
-                    "unit":
-                        item["unit"],
-
-                    "substitutes":
-                        matches
-
-                })
-
-
-        result = {
-
-            "ingredients":
-                ingredient_results,
-
-            "actions":
-                actions,
-
-            "substitutions":
-                substitutions
-
-        }
-
+        print("\nANALYZE ERROR:")
+        print(error)
 
         return jsonify({
 
-            "success":
-                True,
+            "success": False,
 
-            "result":
-                make_json_safe(result)
+            "message": "Unable to analyze recipe.",
 
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                str(e)
+            "error": str(error)
 
         }), 500
 
 
 # ============================================================
-# SINGLE INGREDIENT SUBSTITUTION API
+# INGREDIENT SUBSTITUTION
 # ============================================================
 
-@app.route(
-    "/substitute",
-    methods=["POST"]
-)
+@app.route("/substitute", methods=["POST"])
 def substitute():
 
     try:
 
         data = request.get_json()
 
-
         if not data:
 
             return jsonify({
+                "success": False,
+                "message": "No ingredient data received."
+            })
 
-                "success":
-                    False,
-
-                "error":
-                    "No data received."
-
-            }), 400
-
-
-        ingredient_text = data.get(
+        ingredient = data.get(
             "ingredient",
             ""
         ).strip()
 
-
-        if not ingredient_text:
-
-            return jsonify({
-
-                "success":
-                    False,
-
-                "error":
-                    "Please enter an ingredient."
-
-            }), 400
-
-
-        extracted = extract_ingredient_info(
-            ingredient_text
-        )
-
-
-        if not extracted:
+        if not ingredient:
 
             return jsonify({
+                "success": False,
+                "message": "Please enter an ingredient."
+            })
 
-                "success":
-                    False,
-
-                "error":
-                    "Could not understand the ingredient."
-
-            }), 400
-
-
-        item = extracted[0]
-
-
-        normalized = item[
-            "normalized_ingredient"
-        ]
-
-
-        substitutes = get_substitutes(
-            normalized
+        result = get_substitutes(
+            ingredient
         )
 
+        return jsonify(
+            make_json_safe({
 
-        result = {
+                "success": True,
 
-            "original":
-                ingredient_text,
+                "ingredient": ingredient,
 
-            "ingredient":
-                normalized,
+                "substitutes": result
 
-            "quantity":
-                item["quantity"],
+            })
+        )
 
-            "unit":
-                item["unit"],
+    except Exception as error:
 
-            "substitutes":
-                substitutes
-
-        }
-
+        print("\nSUBSTITUTION ERROR:")
+        print(error)
 
         return jsonify({
 
-            "success":
-                True,
+            "success": False,
 
-            "result":
-                make_json_safe(result)
+            "message": "Unable to find substitutions.",
 
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                str(e)
+            "error": str(error)
 
         }), 500
 
 
 # ============================================================
-# FIND RECIPES API
+# WHAT CAN I MAKE?
 # ============================================================
 
-@app.route(
-    "/find-recipes",
-    methods=["POST"]
-)
-def find_recipes_api():
+@app.route("/find-recipes", methods=["POST"])
+def find_recipe_results():
+
+    start_time = time.perf_counter()
 
     try:
 
         data = request.get_json()
 
-
         if not data:
 
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
-                "error":
-                    "No data received."
+                "message": "No recipe search data received."
 
-            }), 400
+            })
 
-
-        ingredient_text = data.get(
+        ingredients_text = data.get(
             "ingredients",
             ""
         ).strip()
 
+        category = data.get(
+            "category",
+            ""
+        ).strip()
 
-        if not ingredient_text:
+        if not ingredients_text:
 
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
-                "error":
-                    "Please enter at least one ingredient."
+                "message": "Please enter ingredients."
 
-            }), 400
+            })
 
+        # ====================================================
+        # NORMALIZE INGREDIENTS
+        # ====================================================
 
-        user_ingredients = (
-            normalize_user_ingredients(
-                ingredient_text
-            )
+        user_ingredients = normalize_user_ingredients(
+            ingredients_text
         )
-
 
         if not user_ingredients:
 
             return jsonify({
 
-                "success":
-                    False,
+                "success": False,
 
-                "error":
-                    "No valid ingredients found."
+                "message": "No valid ingredients found."
 
-            }), 400
+            })
 
+        # ====================================================
+        # SEARCH RECIPES
+        # ====================================================
+
+        search_start = time.perf_counter()
 
         results = find_recipes(
+
             user_ingredients,
+
+            category=category,
+
             limit=10
+
         )
 
-
-        # IMPORTANT:
-        # Recipe matcher may return sets.
-        # Convert everything into JSON-safe values.
-
-        results = make_json_safe(
-            results
+        search_time = (
+            time.perf_counter()
+            -
+            search_start
         )
 
+        # ====================================================
+        # OPTIMIZED RECIPE ID LOOKUP
+        #
+        # OLD:
+        #
+        # for every recipe:
+        #     SELECT recipe_id ...
+        #
+        # NEW:
+        #
+        # ONE SQLite query for all recipe names.
+        # ====================================================
 
-        safe_ingredients = make_json_safe(
-            user_ingredients
+        enrichment_start = time.perf_counter()
+
+        enriched_results = []
+
+        if results:
+
+            recipe_names = [
+
+                str(
+                    result.get(
+                        "name",
+                        ""
+                    )
+                )
+
+                for result in results
+
+                if result.get(
+                    "name",
+                    ""
+                )
+            ]
+
+            recipe_id_map = {}
+
+            if recipe_names:
+
+                connection = get_sqlite_connection()
+
+                cursor = connection.cursor()
+
+                placeholders = ",".join(
+                    ["?"] * len(recipe_names)
+                )
+
+                query = f"""
+                    SELECT
+                        recipe_id,
+                        name
+                    FROM recipes
+                    WHERE name IN ({placeholders})
+                """
+
+                cursor.execute(
+                    query,
+                    recipe_names
+                )
+
+                rows = cursor.fetchall()
+
+                for row in rows:
+
+                    recipe_id_map[
+                        row["name"]
+                    ] = row["recipe_id"]
+
+                connection.close()
+
+            # ------------------------------------------------
+            # Add IDs without additional database queries
+            # ------------------------------------------------
+
+            for result in results:
+
+                result_copy = dict(
+                    result
+                )
+
+                recipe_name = result_copy.get(
+                    "name",
+                    ""
+                )
+
+                result_copy["recipe_id"] = (
+                    recipe_id_map.get(
+                        recipe_name
+                    )
+                )
+
+                enriched_results.append(
+                    result_copy
+                )
+
+        enrichment_time = (
+            time.perf_counter()
+            -
+            enrichment_start
         )
 
+        total_time = (
+            time.perf_counter()
+            -
+            start_time
+        )
+
+        # ====================================================
+        # PERFORMANCE DEBUG INFORMATION
+        # ====================================================
+
+        print()
+        print("=" * 60)
+        print("RECIPE SEARCH PERFORMANCE")
+        print("=" * 60)
+
+        print(
+            "Ingredients:",
+            ingredients_text
+        )
+
+        print(
+            "Category:",
+            category
+        )
+
+        print(
+            "Results:",
+            len(enriched_results)
+        )
+
+        print(
+            f"Search time:      {search_time:.3f} seconds"
+        )
+
+        print(
+            f"ID lookup time:   {enrichment_time:.3f} seconds"
+        )
+
+        print(
+            f"Total backend:    {total_time:.3f} seconds"
+        )
+
+        print("=" * 60)
+
+        # ====================================================
+        # RESPONSE
+        # ====================================================
+
+        response_data = {
+
+            "success": True,
+
+            "ingredients": user_ingredients,
+
+            "category": category,
+
+            "results": enriched_results
+
+        }
+
+        return jsonify(
+            make_json_safe(
+                response_data
+            )
+        )
+
+    except Exception as error:
+
+        print("\nFIND RECIPES ERROR:")
+        print(error)
 
         return jsonify({
 
-            "success":
-                True,
+            "success": False,
 
-            "ingredients":
-                sorted(safe_ingredients),
+            "message": "Unable to find recipes.",
 
-            "results":
-                results
-
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "error":
-                str(e)
+            "error": str(error)
 
         }), 500
 
 
 # ============================================================
-# RECIPE DETAILS API
+# RECIPE DETAIL HELPERS
 # ============================================================
 
-@app.route(
-    "/recipe-details"
-)
-def recipe_details():
+def get_recipe_columns():
+
+    return [
+
+        "RecipeId",
+        "Name",
+        "Description",
+        "RecipeCategory",
+        "Keywords",
+        "CookTime",
+        "PrepTime",
+        "TotalTime",
+        "RecipeIngredientQuantities",
+        "RecipeIngredientParts",
+        "RecipeInstructions",
+        "RecipeServings",
+        "Calories"
+
+    ]
+
+
+# ============================================================
+# LOAD RECIPE FROM PARQUET BY NAME
+# ============================================================
+
+def load_recipe_from_parquet(
+    recipe_name
+):
+
+    columns = get_recipe_columns()
+
+    recipe_df = pd.read_parquet(
+
+        DATA_FILE,
+
+        columns=columns
+
+    )
+
+    target_name = normalize_dish_name(
+        recipe_name
+    )
+
+    normalized_names = (
+
+        recipe_df["Name"]
+
+        .astype(str)
+
+        .str.lower()
+
+        .str.strip()
+
+    )
+
+    # --------------------------------------------------------
+    # Exact normalized match
+    # --------------------------------------------------------
+
+    exact_mask = (
+
+        normalized_names
+
+        .apply(
+            normalize_dish_name
+        )
+
+        == target_name
+
+    )
+
+    matches = recipe_df[
+        exact_mask
+    ]
+
+    # --------------------------------------------------------
+    # Token matching fallback
+    # --------------------------------------------------------
+
+    if matches.empty:
+
+        query_tokens = get_dish_tokens(
+            recipe_name
+        )
+
+        if not query_tokens:
+
+            return None
+
+        normalized_series = (
+
+            normalized_names
+
+            .apply(
+                normalize_dish_name
+            )
+
+        )
+
+        mask = pd.Series(
+            True,
+            index=recipe_df.index
+        )
+
+        for token in query_tokens:
+
+            if token == "biryani":
+
+                token_mask = (
+
+                    normalized_series.str.contains(
+
+                        "biryani|biriyani",
+
+                        regex=True,
+
+                        na=False
+
+                    )
+
+                )
+
+            else:
+
+                token_mask = (
+
+                    normalized_series.str.contains(
+
+                        rf"\b{token}\b",
+
+                        regex=True,
+
+                        na=False
+
+                    )
+
+                )
+
+            mask = mask & token_mask
+
+        matches = recipe_df[
+            mask
+        ]
+
+    if matches.empty:
+
+        return None
+
+    return matches.iloc[0]
+
+
+# ============================================================
+# BUILD RECIPE DETAIL OBJECT
+# ============================================================
+
+def build_recipe_detail(
+    recipe_row
+):
+
+    quantities = recipe_row[
+        "RecipeIngredientQuantities"
+    ]
+
+    ingredients = recipe_row[
+        "RecipeIngredientParts"
+    ]
 
     try:
 
-        recipe_name = request.args.get(
-            "name",
-            ""
+        quantities = list(
+            quantities
+        )
+
+    except Exception:
+
+        quantities = []
+
+    try:
+
+        ingredients = list(
+            ingredients
+        )
+
+    except Exception:
+
+        ingredients = []
+
+    ingredient_list = []
+
+    for index, ingredient in enumerate(
+        ingredients
+    ):
+
+        ingredient = str(
+            ingredient
         ).strip()
 
+        if not ingredient:
 
-        if not recipe_name:
+            continue
 
-            return jsonify({
+        quantity = ""
 
-                "success":
-                    False,
-
-                "error":
-                    "Recipe name is required."
-
-            }), 400
-
-
-        columns = [
-
-            "RecipeId",
-            "Name",
-            "Description",
-            "RecipeCategory",
-            "CookTime",
-            "PrepTime",
-            "TotalTime",
-            "RecipeIngredientQuantities",
-            "RecipeIngredientParts",
-            "RecipeInstructions",
-            "RecipeServings",
-            "Calories"
-
-        ]
-
-
-        # ----------------------------------------------------
-        # First attempt: PyArrow filtering
-        # ----------------------------------------------------
-
-        try:
-
-            df = pd.read_parquet(
-
-                DATA_FILE,
-
-                columns=columns,
-
-                filters=[
-                    [
-                        (
-                            "Name",
-                            "==",
-                            recipe_name
-                        )
-                    ]
-                ]
-
-            )
-
-        except Exception:
-
-            df = pd.DataFrame()
-
-
-        # ----------------------------------------------------
-        # Fallback: case-insensitive search
-        # ----------------------------------------------------
-
-        if df.empty:
-
-            names_df = pd.read_parquet(
-
-                DATA_FILE,
-
-                columns=["Name"]
-
-            )
-
-
-            matches = names_df[
-
-                names_df["Name"]
-                .astype(str)
-                .str.lower()
-                ==
-                recipe_name.lower()
-
-            ]
-
-
-            if matches.empty:
-
-                return jsonify({
-
-                    "success":
-                        False,
-
-                    "error":
-                        "Recipe not found."
-
-                }), 404
-
-
-            actual_name = matches.iloc[0][
-                "Name"
-            ]
-
-
-            df = pd.read_parquet(
-
-                DATA_FILE,
-
-                columns=columns,
-
-                filters=[
-                    [
-                        (
-                            "Name",
-                            "==",
-                            actual_name
-                        )
-                    ]
-                ]
-
-            )
-
-
-        if df.empty:
-
-            return jsonify({
-
-                "success":
-                    False,
-
-                "error":
-                    "Recipe not found."
-
-            }), 404
-
-
-        row = df.iloc[0]
-
-
-        # ----------------------------------------------------
-        # Safe array conversion
-        # ----------------------------------------------------
-
-        def to_list(value):
-
-            if value is None:
-                return []
-
-
-            if isinstance(
-                value,
-                np.ndarray
-            ):
-
-                return value.tolist()
-
-
-            if isinstance(
-                value,
-                (list, tuple)
-            ):
-
-                return list(value)
-
-
-            try:
-
-                if pd.isna(value):
-                    return []
-
-            except Exception:
-                pass
-
-
-            return [value]
-
-
-        quantities = to_list(
-            row.get(
-                "RecipeIngredientQuantities"
-            )
-        )
-
-
-        parts = to_list(
-            row.get(
-                "RecipeIngredientParts"
-            )
-        )
-
-
-        instructions = to_list(
-            row.get(
-                "RecipeInstructions"
-            )
-        )
-
-
-        # ----------------------------------------------------
-        # Ingredients
-        # ----------------------------------------------------
-
-        ingredient_list = []
-
-
-        max_length = max(
-            len(quantities),
-            len(parts)
-        )
-
-
-        for i in range(
-            max_length
+        if index < len(
+            quantities
         ):
 
-            quantity = (
-
-                str(
-                    quantities[i]
-                ).strip()
-
-                if i < len(quantities)
-
-                else ""
-
-            )
-
-
-            ingredient = (
-
-                str(
-                    parts[i]
-                ).strip()
-
-                if i < len(parts)
-
-                else ""
-
-            )
-
-
-            if ingredient.lower() == "nan":
-
-                ingredient = ""
-
+            quantity = str(
+                quantities[index]
+            ).strip()
 
             if quantity.lower() == "nan":
 
                 quantity = ""
 
+        parsed = extract_ingredient_info(
 
-            if ingredient:
+            f"{quantity} {ingredient}".strip()
 
-                if quantity:
+        )
 
-                    ingredient_list.append(
+        normalized = ingredient
+        parsed_quantity = quantity
+        parsed_unit = ""
 
-                        f"{quantity} {ingredient}"
+        if parsed:
 
-                    )
+            parsed_item = parsed[0]
 
-                else:
+            normalized = parsed_item.get(
+                "normalized_ingredient",
+                ingredient
+            )
 
-                    ingredient_list.append(
-                        ingredient
-                    )
+            parsed_quantity = parsed_item.get(
+                "quantity",
+                quantity
+            )
 
+            parsed_unit = parsed_item.get(
+                "unit",
+                ""
+            )
 
-        # ----------------------------------------------------
-        # Instructions
-        # ----------------------------------------------------
+        substitutions = get_substitutes(
+            normalized
+        )
 
-        instruction_list = []
+        if parsed_quantity and parsed_unit:
 
+            display = (
 
-        for instruction in instructions:
+                f"{parsed_quantity} "
+                f"{parsed_unit} "
+                f"{ingredient}"
 
-            text = str(
-                instruction
-            ).strip()
+            )
 
+        elif parsed_quantity:
 
-            if (
+            display = (
 
-                text
+                f"{parsed_quantity} "
+                f"{ingredient}"
 
-                and
+            )
 
-                text.lower()
-                != "nan"
+        else:
 
-            ):
+            display = ingredient
 
-                instruction_list.append(
-                    text
-                )
+        ingredient_list.append({
 
+            "ingredient": ingredient,
 
-        # ----------------------------------------------------
-        # Safe values
-        # ----------------------------------------------------
+            "display": display,
 
-        def safe_value(value):
+            "normalized_ingredient": normalized,
 
-            if value is None:
-                return ""
+            "quantity": parsed_quantity,
 
+            "unit": parsed_unit,
 
-            try:
-
-                if pd.isna(value):
-                    return ""
-
-            except Exception:
-                pass
-
-
-            return str(value)
-
-
-        result = {
-
-            "name":
-                safe_value(
-                    row.get("Name")
-                ),
-
-            "description":
-                safe_value(
-                    row.get("Description")
-                ),
-
-            "category":
-                safe_value(
-                    row.get("RecipeCategory")
-                ),
-
-            "prep_time":
-                safe_value(
-                    row.get("PrepTime")
-                ),
-
-            "cook_time":
-                safe_value(
-                    row.get("CookTime")
-                ),
-
-            "total_time":
-                safe_value(
-                    row.get("TotalTime")
-                ),
-
-            "servings":
-                safe_value(
-                    row.get("RecipeServings")
-                ),
-
-            "calories":
-                safe_value(
-                    row.get("Calories")
-                ),
-
-            "ingredients":
-                ingredient_list,
-
-            "instructions":
-                instruction_list
-
-        }
-
-
-        return jsonify({
-
-            "success":
-                True,
-
-            "result":
-                make_json_safe(result)
+            "substitutions": substitutions
 
         })
 
+    # --------------------------------------------------------
+    # Instructions
+    # --------------------------------------------------------
 
-    except Exception as e:
+    instructions = recipe_row[
+        "RecipeInstructions"
+    ]
+
+    if instructions is None:
+
+        instructions = []
+
+    try:
+
+        instructions = list(
+            instructions
+        )
+
+    except Exception:
+
+        instructions = [
+            str(instructions)
+        ]
+
+    cleaned_instructions = []
+
+    for instruction in instructions:
+
+        instruction = str(
+            instruction
+        ).strip()
+
+        if instruction:
+
+            cleaned_instructions.append(
+                instruction
+            )
+
+    # --------------------------------------------------------
+    # Clean basic values
+    # --------------------------------------------------------
+
+    def clean_value(
+        value,
+        default=""
+    ):
+
+        if value is None:
+
+            return default
+
+        try:
+
+            if pd.isna(value):
+
+                return default
+
+        except Exception:
+
+            pass
+
+        return value
+
+    # --------------------------------------------------------
+    # Recipe object
+    # --------------------------------------------------------
+
+    recipe = {
+
+        "id": clean_value(
+            recipe_row["RecipeId"]
+        ),
+
+        "name": clean_value(
+            recipe_row["Name"]
+        ),
+
+        "category": clean_value(
+            recipe_row["RecipeCategory"]
+        ),
+
+        "description": clean_value(
+            recipe_row["Description"]
+        ),
+
+        "keywords": clean_value(
+            recipe_row["Keywords"]
+        ),
+
+        "prep_time": clean_value(
+            recipe_row["PrepTime"]
+        ),
+
+        "cook_time": clean_value(
+            recipe_row["CookTime"]
+        ),
+
+        "total_time": clean_value(
+            recipe_row["TotalTime"]
+        ),
+
+        "servings": clean_value(
+            recipe_row["RecipeServings"]
+        ),
+
+        "calories": clean_value(
+            recipe_row["Calories"]
+        ),
+
+        "ingredients": ingredient_list,
+
+        "instructions": cleaned_instructions
+
+    }
+
+    return recipe
+
+
+# ============================================================
+# RECIPE DETAILS
+# ============================================================
+
+@app.route(
+    "/recipe-details",
+    methods=["GET", "POST"]
+)
+def recipe_details():
+
+    try:
+
+        # ====================================================
+        # GET
+        # ====================================================
+
+        if request.method == "GET":
+
+            recipe_name = request.args.get(
+                "name",
+                ""
+            ).strip()
+
+            if not recipe_name:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message": "Recipe name is required."
+
+                })
+
+            print()
+            print("=" * 60)
+            print("RECIPE DETAILS REQUEST")
+            print("Recipe name:", recipe_name)
+
+            recipe_row = load_recipe_from_parquet(
+                recipe_name
+            )
+
+            if recipe_row is None:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message": "Recipe not found."
+
+                })
+
+            recipe = build_recipe_detail(
+                recipe_row
+            )
+
+            response = {
+
+                "success": True,
+
+                "recipe": recipe,
+
+                "result": recipe
+
+            }
+
+            print(
+                "Recipe loaded:",
+                recipe["name"]
+            )
+
+            print("=" * 60)
+
+            return jsonify(
+                make_json_safe(
+                    response
+                )
+            )
+
+        # ====================================================
+        # POST
+        # ====================================================
+
+        data = request.get_json()
+
+        if not data:
+
+            return jsonify({
+
+                "success": False,
+
+                "message": "No recipe data received."
+
+            })
+
+        recipe_id = data.get(
+            "recipe_id"
+        )
+
+        recipe_name = data.get(
+            "name",
+            ""
+        ).strip()
+
+        # ====================================================
+        # POST BY NAME
+        # ====================================================
+
+        if recipe_id is None and recipe_name:
+
+            recipe_row = load_recipe_from_parquet(
+                recipe_name
+            )
+
+            if recipe_row is None:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message": "Recipe not found."
+
+                })
+
+            recipe = build_recipe_detail(
+                recipe_row
+            )
+
+            return jsonify(
+                make_json_safe({
+
+                    "success": True,
+
+                    "recipe": recipe,
+
+                    "result": recipe
+
+                })
+            )
+
+        # ====================================================
+        # POST BY ID
+        # ====================================================
+
+        if recipe_id is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "message": "Recipe ID or recipe name is required."
+
+            })
+
+        columns = get_recipe_columns()
+
+        recipe_df = pd.read_parquet(
+
+            DATA_FILE,
+
+            columns=columns
+
+        )
+
+        recipe_ids = pd.to_numeric(
+
+            recipe_df["RecipeId"],
+
+            errors="coerce"
+
+        )
+
+        recipe_df = recipe_df[
+            recipe_ids == float(recipe_id)
+        ]
+
+        if recipe_df.empty:
+
+            return jsonify({
+
+                "success": False,
+
+                "message": "Recipe not found."
+
+            })
+
+        row = recipe_df.iloc[0]
+
+        recipe = build_recipe_detail(
+            row
+        )
+
+        return jsonify(
+            make_json_safe({
+
+                "success": True,
+
+                "recipe": recipe,
+
+                "result": recipe
+
+            })
+        )
+
+    except Exception as error:
+
+        print()
+        print("=" * 60)
+        print("RECIPE DETAILS ERROR:")
+        print(error)
+        print("=" * 60)
 
         return jsonify({
 
-            "success":
-                False,
+            "success": False,
 
-            "error":
-                str(e)
+            "message": "Unable to load recipe details.",
+
+            "error": str(error)
 
         }), 500
-@app.route("/make-recipe-page")
-def make_recipe_page():
-    return render_template("make_recipe.html")
-@app.route("/make-recipe", methods=["POST"])
+
+
+# ============================================================
+# DISH NAME NORMALIZATION
+# ============================================================
+
+def normalize_dish_name(text):
+
+    text = str(
+        text
+    ).lower().strip()
+
+    replacements = {
+
+        "biriyani": "biryani",
+
+        "biryanis": "biryani",
+
+        "briyani": "biryani",
+
+        "briani": "biryani",
+
+        "panneer": "paneer",
+
+        "kabob": "kebab",
+
+        "kababs": "kebab",
+
+        "kebob": "kebab",
+
+        "kebobs": "kebab",
+
+        "chilly": "chili",
+
+        "chillies": "chili"
+
+    }
+
+    words = text.split()
+
+    normalized_words = []
+
+    for word in words:
+
+        word = word.strip(
+            ".,!?;:'\"()[]{}"
+        )
+
+        if word in replacements:
+
+            word = replacements[word]
+
+        normalized_words.append(
+            word
+        )
+
+    return " ".join(
+        normalized_words
+    )
+
+
+# ============================================================
+# DISH SEARCH TOKENS
+# ============================================================
+
+def get_dish_tokens(text):
+
+    normalized = normalize_dish_name(
+        text
+    )
+
+    stop_words = {
+
+        "recipe",
+        "dish",
+        "food",
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "with",
+        "style",
+        "easy",
+        "simple",
+        "best",
+        "homemade",
+        "home"
+
+    }
+
+    return [
+
+        word
+
+        for word in normalized.split()
+
+        if word not in stop_words
+
+        and len(word) > 1
+
+    ]
+
+
+# ============================================================
+# FIND BEST RECIPE
+# ============================================================
+
+def find_best_recipe(
+    dish_name
+):
+
+    normalized_query = normalize_dish_name(
+        dish_name
+    )
+
+    query_tokens = get_dish_tokens(
+        normalized_query
+    )
+
+    if not query_tokens:
+
+        return None
+
+    connection = get_sqlite_connection()
+    cursor = connection.cursor()
+
+    # ========================================================
+    # EXACT NAME
+    # ========================================================
+
+    cursor.execute(
+
+        """
+        SELECT
+            recipe_id,
+            name,
+            category
+        FROM recipes
+        WHERE LOWER(name) = LOWER(?)
+        LIMIT 1
+        """,
+
+        (
+            normalized_query,
+        )
+
+    )
+
+    exact = cursor.fetchone()
+
+    if exact:
+
+        connection.close()
+
+        return exact
+
+    # ========================================================
+    # SEARCH TOKENS
+    # ========================================================
+
+    conditions = []
+    parameters = []
+
+    for token in query_tokens:
+
+        if token == "biryani":
+
+            conditions.append(
+
+                """
+                (
+                    LOWER(name) LIKE ?
+                    OR
+                    LOWER(name) LIKE ?
+                )
+                """
+
+            )
+
+            parameters.append(
+                "%biryani%"
+            )
+
+            parameters.append(
+                "%biriyani%"
+            )
+
+        elif token == "kebab":
+
+            conditions.append(
+
+                """
+                (
+                    LOWER(name) LIKE ?
+                    OR
+                    LOWER(name) LIKE ?
+                )
+                """
+
+            )
+
+            parameters.append(
+                "%kebab%"
+            )
+
+            parameters.append(
+                "%kabob%"
+            )
+
+        else:
+
+            conditions.append(
+                "LOWER(name) LIKE ?"
+            )
+
+            parameters.append(
+                f"%{token}%"
+            )
+
+    query = f"""
+
+        SELECT
+            recipe_id,
+            name,
+            category
+
+        FROM recipes
+
+        WHERE
+            {" AND ".join(conditions)}
+
+        ORDER BY
+            LENGTH(name) ASC
+
+        LIMIT 100
+
+    """
+
+    cursor.execute(
+        query,
+        parameters
+    )
+
+    candidates = cursor.fetchall()
+
+    connection.close()
+
+    # ========================================================
+    # VALIDATE CANDIDATES
+    # ========================================================
+
+    best = None
+    best_score = -1
+
+    for candidate in candidates:
+
+        recipe_name = normalize_dish_name(
+            candidate["name"]
+        )
+
+        recipe_tokens = set(
+            recipe_name.split()
+        )
+
+        all_words_present = True
+
+        for token in query_tokens:
+
+            if token == "biryani":
+
+                if (
+                    "biryani" not in recipe_tokens
+                    and
+                    "biriyani" not in recipe_tokens
+                ):
+
+                    all_words_present = False
+                    break
+
+            elif token not in recipe_tokens:
+
+                all_words_present = False
+                break
+
+        if not all_words_present:
+
+            continue
+
+        # ====================================================
+        # SCORING
+        # ====================================================
+
+        score = 0
+
+        if recipe_name == normalized_query:
+
+            score += 1000
+
+        if normalized_query in recipe_name:
+
+            score += 300
+
+        score += len(
+            query_tokens
+        ) * 200
+
+        similarity = SequenceMatcher(
+
+            None,
+
+            normalized_query,
+
+            recipe_name
+
+        ).ratio()
+
+        score += similarity * 100
+
+        extra_words = max(
+
+            0,
+
+            len(recipe_name.split())
+            -
+            len(query_tokens)
+
+        )
+
+        score -= extra_words * 5
+
+        if score > best_score:
+
+            best_score = score
+
+            best = candidate
+
+    return best
+
+
+# ============================================================
+# WHAT DO YOU WANT TO MAKE?
+# ============================================================
+
+@app.route(
+    "/make-recipe",
+    methods=["POST"]
+)
 def make_recipe():
 
     try:
@@ -934,320 +1658,164 @@ def make_recipe():
         data = request.get_json()
 
         if not data:
+
             return jsonify({
+
                 "success": False,
-                "error": "No data received."
-            }), 400
 
-        dish = data.get("dish", "").strip()
-
-        if not dish:
-            return jsonify({
-                "success": False,
-                "error": "Please enter a dish name."
-            }), 400
-
-        columns = [
-            "Name",
-            "Description",
-            "RecipeCategory",
-            "PrepTime",
-            "CookTime",
-            "TotalTime",
-            "RecipeIngredientQuantities",
-            "RecipeIngredientParts",
-            "RecipeInstructions",
-            "RecipeServings",
-            "Calories"
-        ]
-
-        df = pd.read_parquet(
-            DATA_FILE,
-            columns=columns
-        )
-
-        # ----------------------------------------------------
-        # Search recipe name
-        # ----------------------------------------------------
-
-        dish_lower = dish.lower()
-
-        exact_matches = df[
-            df["Name"]
-            .astype(str)
-            .str.lower()
-            == dish_lower
-        ]
-
-        if not exact_matches.empty:
-
-            row = exact_matches.iloc[0]
-
-        else:
-
-            partial_matches = df[
-                df["Name"]
-                .astype(str)
-                .str.lower()
-                .str.contains(
-                    dish_lower,
-                    regex=False,
-                    na=False
-                )
-            ]
-
-            if partial_matches.empty:
-
-                return jsonify({
-                    "success": False,
-                    "error":
-                        f"No recipe found for '{dish}'."
-                }), 404
-
-            row = partial_matches.iloc[0]
-
-        # ----------------------------------------------------
-        # Convert arrays safely
-        # ----------------------------------------------------
-
-        def to_list(value):
-
-            if value is None:
-                return []
-
-            if isinstance(
-                value,
-                np.ndarray
-            ):
-                return value.tolist()
-
-            if isinstance(
-                value,
-                (list, tuple)
-            ):
-                return list(value)
-
-            try:
-
-                if pd.isna(value):
-                    return []
-
-            except Exception:
-                pass
-
-            return [value]
-
-        quantities = to_list(
-            row["RecipeIngredientQuantities"]
-        )
-
-        parts = to_list(
-            row["RecipeIngredientParts"]
-        )
-
-        instructions = to_list(
-            row["RecipeInstructions"]
-        )
-
-        # ----------------------------------------------------
-        # Build ingredients
-        # ----------------------------------------------------
-
-        ingredients = []
-
-        max_length = max(
-            len(quantities),
-            len(parts)
-        )
-
-        for i in range(max_length):
-
-            quantity = ""
-
-            ingredient_name = ""
-
-            if i < len(quantities):
-
-                quantity = str(
-                    quantities[i]
-                ).strip()
-
-            if i < len(parts):
-
-                ingredient_name = str(
-                    parts[i]
-                ).strip()
-
-            if (
-                quantity.lower()
-                == "nan"
-            ):
-                quantity = ""
-
-            if (
-                ingredient_name.lower()
-                == "nan"
-            ):
-                ingredient_name = ""
-
-            if not ingredient_name:
-                continue
-
-            # ------------------------------------------------
-            # Parse ingredient to obtain normalized name
-            # ------------------------------------------------
-
-            parsed = extract_ingredient_info(
-                f"{quantity} {ingredient_name}".strip()
-            )
-
-            normalized = ingredient_name.lower().strip()
-
-            if parsed:
-
-                normalized = parsed[0][
-                    "normalized_ingredient"
-                ]
-
-            substitutions = get_substitutes(
-                normalized
-            )
-
-            if quantity:
-
-                display = (
-                    f"{quantity} "
-                    f"{ingredient_name}"
-                )
-
-            else:
-
-                display = ingredient_name
-
-            ingredients.append({
-
-                "display":
-                    display,
-
-                "ingredient":
-                    normalized,
-
-                "quantity":
-                    quantity,
-
-                "substitutions":
-                    substitutions
+                "message": "No request data received."
 
             })
 
-        # ----------------------------------------------------
-        # Instructions
-        # ----------------------------------------------------
+        dish_name = data.get(
+            "dish",
+            ""
+        ).strip()
 
-        clean_instructions = []
+        if not dish_name:
 
-        for instruction in instructions:
-
-            text = str(
-                instruction
+            dish_name = data.get(
+                "recipe",
+                ""
             ).strip()
 
-            if (
-                text
-                and text.lower() != "nan"
-            ):
+        if not dish_name:
 
-                clean_instructions.append(
-                    text
+            return jsonify({
+
+                "success": False,
+
+                "message": "Please enter a dish name."
+
+            })
+
+        print()
+        print("=" * 60)
+
+        print("DISH SEARCH:")
+        print(dish_name)
+
+        # ====================================================
+        # FIND USING SQLITE
+        # ====================================================
+
+        matched_recipe = find_best_recipe(
+            dish_name
+        )
+
+        if matched_recipe is None:
+
+            print(
+                "No matching recipe found."
+            )
+
+            return jsonify({
+
+                "success": False,
+
+                "message": (
+
+                    f"No matching recipe found "
+                    f"for '{dish_name}'."
+
                 )
 
-        # ----------------------------------------------------
-        # Safe values
-        # ----------------------------------------------------
+            })
 
-        def safe_value(value):
+        matched_name = matched_recipe[
+            "name"
+        ]
 
-            if value is None:
-                return ""
+        print("SQLite match:")
+        print(matched_name)
 
-            try:
+        # ====================================================
+        # LOAD COMPLETE RECIPE
+        # ====================================================
 
-                if pd.isna(value):
-                    return ""
+        recipe_row = load_recipe_from_parquet(
+            matched_name
+        )
 
-            except Exception:
-                pass
+        if recipe_row is None:
 
-            return str(value)
+            print(
+                "Parquet recipe could not be found."
+            )
 
-        recipe = {
+            return jsonify({
 
-            "name":
-                safe_value(
-                    row["Name"]
-                ),
+                "success": False,
 
-            "description":
-                safe_value(
-                    row["Description"]
-                ),
+                "message": (
 
-            "category":
-                safe_value(
-                    row["RecipeCategory"]
-                ),
+                    "The recipe was found in the "
+                    "search index, but the complete "
+                    "recipe could not be loaded."
 
-            "prep_time":
-                safe_value(
-                    row["PrepTime"]
-                ),
+                )
 
-            "cook_time":
-                safe_value(
-                    row["CookTime"]
-                ),
+            })
 
-            "total_time":
-                safe_value(
-                    row["TotalTime"]
-                ),
+        print("Parquet match:")
+        print(recipe_row["Name"])
 
-            "servings":
-                safe_value(
-                    row["RecipeServings"]
-                ),
+        # ====================================================
+        # BUILD COMPLETE RECIPE
+        # ====================================================
 
-            "calories":
-                safe_value(
-                    row["Calories"]
-                ),
+        recipe = build_recipe_detail(
+            recipe_row
+        )
 
-            "ingredients":
-                ingredients,
-
-            "instructions":
-                clean_instructions
-
-        }
-
-        return jsonify({
+        result = {
 
             "success": True,
 
-            "recipe":
-                make_json_safe(recipe)
+            "recipe": recipe
 
-        })
+        }
 
-    except Exception as e:
+        print(
+            "Recipe successfully loaded."
+        )
+
+        print("=" * 60)
+
+        return jsonify(
+            make_json_safe(
+                result
+            )
+        )
+
+    except Exception as error:
+
+        print()
+        print("=" * 60)
+
+        print(
+            "MAKE RECIPE ERROR:"
+        )
+
+        print(error)
+
+        print("=" * 60)
 
         return jsonify({
 
             "success": False,
 
-            "error": str(e)
+            "message": (
+
+                "An error occurred while "
+                "finding the recipe."
+
+            ),
+
+            "error": str(error)
 
         }), 500
+
 
 # ============================================================
 # RUN APPLICATION
@@ -1262,18 +1830,22 @@ if __name__ == "__main__":
     )
 
     print(
-        "       AI Recipe Understanding System"
+        " AI Recipe Understanding & Ingredient Substitution System"
     )
 
     print("=" * 60)
 
+    print()
+
     print(
-        "\nStarting Flask server..."
+        "Server running at:"
     )
 
     print(
-        "Open: http://127.0.0.1:5000"
+        "http://127.0.0.1:5000"
     )
+
+    print()
 
     app.run(
         debug=True

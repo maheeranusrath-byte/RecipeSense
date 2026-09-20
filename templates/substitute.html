@@ -28,9 +28,9 @@
             Recipe<span>Sense</span>
         </a>
 
-       <a href="/" class="nav-link">
-    ← Back to Home
-</a>
+        <a href="/" class="nav-link">
+            ← Back to Home
+        </a>
 
     </div>
 
@@ -41,6 +41,10 @@
 
     <div class="container">
 
+
+        <!-- ==================================================
+             HERO
+        ================================================== -->
 
         <section class="hero"
                  style="border-radius: 0 0 20px 20px;">
@@ -62,9 +66,12 @@
 
 
 
+        <!-- ==================================================
+             INPUT CARD
+        ================================================== -->
+
         <section class="card"
                  style="margin-top:25px;">
-
 
             <div class="card-header">
 
@@ -86,7 +93,8 @@
             <input
                 type="text"
                 id="ingredientInput"
-                placeholder="Example: 2 tablespoons butter">
+                placeholder="Example: 2 tablespoons butter"
+                autocomplete="off">
 
 
             <button
@@ -102,10 +110,13 @@
                  class="status hidden">
             </div>
 
-
         </section>
 
 
+
+        <!-- ==================================================
+             RESULTS
+        ================================================== -->
 
         <section id="results"
                  class="results-section hidden">
@@ -149,6 +160,11 @@
 
 <script>
 
+
+// ============================================================
+// FIND SUBSTITUTION
+// ============================================================
+
 async function findSubstitute() {
 
     const input =
@@ -176,6 +192,10 @@ async function findSubstitute() {
         input.value.trim();
 
 
+    // ========================================================
+    // VALIDATE INPUT
+    // ========================================================
+
     if (!ingredient) {
 
         status.className =
@@ -184,9 +204,17 @@ async function findSubstitute() {
         status.textContent =
             "Please enter an ingredient.";
 
+        results.classList.add(
+            "hidden"
+        );
+
         return;
     }
 
+
+    // ========================================================
+    // SHOW LOADING
+    // ========================================================
 
     status.className =
         "status";
@@ -198,6 +226,12 @@ async function findSubstitute() {
         "hidden"
     );
 
+    container.innerHTML = "";
+
+
+    // ========================================================
+    // SEND REQUEST
+    // ========================================================
 
     try {
 
@@ -209,54 +243,133 @@ async function findSubstitute() {
                     method: "POST",
 
                     headers: {
+
                         "Content-Type":
                             "application/json"
+
                     },
 
                     body: JSON.stringify({
+
                         ingredient:
                             ingredient
+
                     })
 
                 }
             );
 
 
-        const data =
-            await response.json();
+        // ====================================================
+        // CHECK HTTP RESPONSE
+        // ====================================================
 
-
-        if (!data.success) {
+        if (!response.ok) {
 
             throw new Error(
-                data.error ||
-                "Could not find substitutions."
+                "Server error. Please try again."
             );
 
         }
 
 
+        const data =
+            await response.json();
+
+
+        // ====================================================
+        // CHECK BACKEND RESPONSE
+        // ====================================================
+
+        if (!data.success) {
+
+            throw new Error(
+
+                data.message ||
+                data.error ||
+                "Could not find substitutions."
+
+            );
+
+        }
+
+
+        // ====================================================
+        // IMPORTANT
+        //
+        // Backend returns:
+        //
+        // {
+        //     success: true,
+        //     ingredient: "...",
+        //     substitutes: [...]
+        // }
+        //
+        // NOT:
+        //
+        // data.result
+        // ====================================================
+
+        const normalizedIngredient =
+            data.ingredient ||
+            ingredient;
+
+
+        const substitutes =
+            Array.isArray(
+                data.substitutes
+            )
+                ? data.substitutes
+                : [];
+
+
+        // ====================================================
+        // CLEAR OLD RESULTS
+        // ====================================================
+
         container.innerHTML = "";
 
 
-        if (!data.result.substitutes.length) {
+        // ====================================================
+        // NO SUBSTITUTION
+        // ====================================================
+
+        if (
+            substitutes.length === 0
+        ) {
 
             container.innerHTML = `
 
                 <div class="empty-state">
 
                     No substitution found for
+
                     <strong>
-                        ${escapeHtml(data.result.ingredient)}
+                        ${escapeHtml(
+                            normalizedIngredient
+                        )}
                     </strong>.
+
+                    <br><br>
+
+                    Try another common ingredient such as
+                    butter, milk, yogurt, egg, sugar,
+                    flour, garlic or onion.
 
                 </div>
 
             `;
 
-        } else {
+        }
 
-            data.result.substitutes.forEach(
+
+        // ====================================================
+        // DISPLAY SUBSTITUTIONS
+        // ====================================================
+
+        else {
+
+            substitutes.forEach(
                 item => {
 
                     const div =
@@ -264,31 +377,63 @@ async function findSubstitute() {
                             "div"
                         );
 
+
                     div.className =
                         "substitution-item";
+
+
+                    const substitute =
+                        item.substitute ||
+                        "Alternative";
+
+
+                    const ratio =
+                        item.ratio ||
+                        "As needed";
+
+
+                    const reason =
+                        item.reason ||
+                        "Practical ingredient alternative.";
 
 
                     div.innerHTML = `
 
                         <strong>
+
                             ${escapeHtml(
-                                data.result.ingredient
+                                normalizedIngredient
                             )}
+
                             →
+
                             ${escapeHtml(
-                                item.substitute
+                                substitute
                             )}
+
                         </strong>
+
 
                         <br>
 
+
                         <span class="ratio">
+
                             Ratio:
-                            ${escapeHtml(item.ratio)}
+
+                            ${escapeHtml(
+                                ratio
+                            )}
+
                         </span>
 
+
                         <div class="reason">
-                            ${escapeHtml(item.reason)}
+
+                            ${escapeHtml(
+                                reason
+                            )}
+
                         </div>
 
                     `;
@@ -304,24 +449,64 @@ async function findSubstitute() {
         }
 
 
+        // ====================================================
+        // SUCCESS STATUS
+        // ====================================================
+
         status.className =
             "status success";
 
-        status.textContent =
-            "Substitution search completed.";
+
+        if (
+            substitutes.length > 0
+        ) {
+
+            status.textContent =
+                `Found ${substitutes.length} substitution${
+                    substitutes.length === 1
+                        ? ""
+                        : "s"
+                } for ${normalizedIngredient}.`;
+
+        } else {
+
+            status.textContent =
+                "Substitution search completed.";
+
+        }
+
 
         results.classList.remove(
             "hidden"
         );
 
+    }
 
-    } catch (error) {
+
+    // ========================================================
+    // ERROR HANDLING
+    // ========================================================
+
+    catch (error) {
+
+        console.error(
+            "SUBSTITUTION ERROR:",
+            error
+        );
+
 
         status.className =
             "status error";
 
+
         status.textContent =
-            error.message;
+            error.message ||
+            "Unable to find substitutions.";
+
+
+        results.classList.add(
+            "hidden"
+        );
 
     }
 
@@ -329,19 +514,70 @@ async function findSubstitute() {
 
 
 
+// ============================================================
+// ESCAPE HTML
+// ============================================================
+
 function escapeHtml(value) {
 
     return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
 
 }
+
+
+
+// ============================================================
+// ENTER KEY SUPPORT
+// ============================================================
+
+document
+    .getElementById(
+        "ingredientInput"
+    )
+    .addEventListener(
+        "keydown",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                findSubstitute();
+
+            }
+
+        }
+    );
+
 
 </script>
 
 
 </body>
+
 </html>

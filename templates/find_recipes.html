@@ -127,6 +127,306 @@
 
 
         /* =====================================================
+           RECIPE MODAL
+           ===================================================== */
+
+        .recipe-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+
+        .recipe-modal.hidden {
+            display: none;
+        }
+
+
+        .recipe-modal-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(3px);
+        }
+
+
+        .recipe-modal-box {
+            position: relative;
+            z-index: 2;
+            width: min(900px, 95vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 70px rgba(0, 0, 0, 0.25);
+        }
+
+
+        .recipe-modal-close {
+            position: sticky;
+            float: right;
+            top: 0;
+            z-index: 10;
+
+            width: 38px;
+            height: 38px;
+
+            border: none;
+            border-radius: 50%;
+
+            background: #f1f5f3;
+            color: #315c48;
+
+            font-size: 25px;
+            line-height: 38px;
+
+            cursor: pointer;
+        }
+
+
+        .recipe-modal-close:hover {
+            background: #e2ece7;
+        }
+
+
+        /* =====================================================
+           RECIPE DETAIL
+           ===================================================== */
+
+        .recipe-detail-header {
+            padding-right: 50px;
+            margin-bottom: 20px;
+        }
+
+
+        .recipe-detail-header h2 {
+            margin-top: 8px;
+            color: #214f3a;
+            font-size: 28px;
+            line-height: 1.25;
+        }
+
+
+        .detail-category {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: #e8f5ee;
+            color: #26744f;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+
+        .recipe-description {
+            background: #f5f8f6;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 22px;
+            color: #56665e;
+            line-height: 1.6;
+        }
+
+
+        /* =====================================================
+           RECIPE META
+           ===================================================== */
+
+        .recipe-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+
+
+        .recipe-meta > div {
+            border: 1px solid #e0e9e4;
+            border-radius: 15px;
+            padding: 18px;
+            text-align: center;
+            background: #ffffff;
+
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+
+        .recipe-meta > div > span {
+            font-size: 22px;
+        }
+
+
+        .recipe-meta strong {
+            color: #456158;
+            font-size: 14px;
+        }
+
+
+        .recipe-meta small {
+            color: #253f35;
+            font-size: 14px;
+        }
+
+
+        /* =====================================================
+           DETAIL SECTIONS
+           ===================================================== */
+
+        .recipe-detail-section {
+            margin-top: 28px;
+        }
+
+
+        .recipe-detail-section h3 {
+            color: #214f3a;
+            font-size: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #dfe8e3;
+            margin-bottom: 0;
+        }
+
+
+        /* =====================================================
+           INGREDIENTS
+           ===================================================== */
+
+        .recipe-ingredients {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+
+        .recipe-ingredients li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+
+            padding: 13px 5px;
+
+            border-bottom: 1px solid #edf1ef;
+
+            color: #40554d;
+            line-height: 1.5;
+        }
+
+
+        .recipe-ingredients li span {
+            color: #2f855a;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+
+        /* =====================================================
+           INSTRUCTIONS
+           ===================================================== */
+
+        .recipe-instructions {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+
+        .recipe-instructions li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+
+            padding: 15px 5px;
+
+            border-bottom: 1px solid #edf1ef;
+
+            color: #40554d;
+            line-height: 1.6;
+        }
+
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            min-width: 28px;
+            height: 28px;
+
+            border-radius: 50%;
+
+            background: #2f855a;
+            color: #ffffff;
+
+            font-size: 13px;
+            font-weight: 800;
+
+            flex-shrink: 0;
+        }
+
+
+        /* =====================================================
+           SOURCE NOTE
+           ===================================================== */
+
+        .recipe-source-note {
+            margin-top: 25px;
+            padding: 14px;
+            border-radius: 10px;
+
+            background: #f5f8f6;
+
+            color: #718078;
+            font-size: 12px;
+            text-align: center;
+        }
+
+
+        /* =====================================================
+           LOADING
+           ===================================================== */
+
+        .recipe-detail-loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #60736a;
+        }
+
+
+        .loading-spinner {
+            width: 38px;
+            height: 38px;
+
+            margin: auto;
+
+            border: 4px solid #e1ebe5;
+            border-top-color: #2f855a;
+
+            border-radius: 50%;
+
+            animation: spin 0.8s linear infinite;
+        }
+
+
+        @keyframes spin {
+
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+
+        }
+
+
+        /* =====================================================
            RESPONSIVE
            ===================================================== */
 
@@ -145,6 +445,25 @@
             .category-list {
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
+            }
+
+        }
+
+
+        @media (max-width: 600px) {
+
+            .recipe-meta {
+                grid-template-columns: 1fr;
+            }
+
+
+            .recipe-modal-box {
+                padding: 20px;
+            }
+
+
+            .recipe-detail-header h2 {
+                font-size: 23px;
             }
 
         }
@@ -225,7 +544,6 @@
                  ================================================= -->
 
             <aside class="category-menu">
-
 
                 <div class="category-menu-title">
                     🍽️ Recipe Categories
@@ -314,7 +632,6 @@
 
                 </div>
 
-
             </aside>
 
 
@@ -332,9 +649,7 @@
 
                 <section class="card">
 
-
                     <div class="card-header">
-
 
                         <div class="section-icon">
                             🔎
@@ -359,7 +674,6 @@
                             Main Course
 
                         </span>
-
 
                     </div>
 
@@ -413,9 +727,7 @@
 
             </div>
 
-
         </div>
-
 
     </div>
 
@@ -496,6 +808,24 @@
 let selectedCategory = "Main Course";
 
 
+// ============================================================
+// SEARCH REQUEST CONTROL
+//
+// IMPORTANT:
+// This prevents an older request from overwriting the results
+// of a newer category search.
+//
+// Example:
+//
+// Main Course request  -> request #1
+// Desserts request     -> request #2
+//
+// If #1 finishes after #2, its results are ignored.
+// ============================================================
+
+let searchRequestId = 0;
+
+
 
 // ============================================================
 // SELECT CATEGORY
@@ -503,10 +833,6 @@ let selectedCategory = "Main Course";
 
 function selectCategory(button) {
 
-
-    // --------------------------------------------------------
-    // Remove active state from all buttons
-    // --------------------------------------------------------
 
     document
         .querySelectorAll(".category-btn")
@@ -517,24 +843,22 @@ function selectCategory(button) {
         });
 
 
-    // --------------------------------------------------------
-    // Activate selected button
-    // --------------------------------------------------------
-
     button.classList.add("active");
 
-
-    // --------------------------------------------------------
-    // Store selected category
-    // --------------------------------------------------------
 
     selectedCategory =
         button.dataset.category;
 
 
-    // --------------------------------------------------------
-    // Update page text
-    // --------------------------------------------------------
+    /*
+     * Invalidate every previous search request.
+     *
+     * If a previous request is still running, it will no
+     * longer be allowed to update the page.
+     */
+
+    searchRequestId++;
+
 
     document.getElementById(
         "pageTitle"
@@ -572,10 +896,6 @@ function selectCategory(button) {
         `Recommended ${selectedCategory} Recipes`;
 
 
-    // --------------------------------------------------------
-    // Update placeholder
-    // --------------------------------------------------------
-
     document.getElementById(
         "ingredientsInput"
     ).placeholder =
@@ -583,10 +903,6 @@ function selectCategory(button) {
             selectedCategory
         );
 
-
-    // --------------------------------------------------------
-    // Clear previous results
-    // --------------------------------------------------------
 
     document.getElementById(
         "results"
@@ -683,10 +999,6 @@ async function findRecipes() {
         input.value.trim();
 
 
-    // --------------------------------------------------------
-    // Validation
-    // --------------------------------------------------------
-
     if (!ingredients) {
 
         status.className =
@@ -702,15 +1014,34 @@ async function findRecipes() {
     }
 
 
-    // --------------------------------------------------------
-    // Loading
-    // --------------------------------------------------------
+    /*
+     * ========================================================
+     * CAPTURE THE CATEGORY AT THE MOMENT THE SEARCH STARTS
+     * ========================================================
+     *
+     * Do NOT use the global selectedCategory after await.
+     *
+     * The user may change the category while the request is
+     * still running.
+     */
+
+    const requestCategory =
+        selectedCategory;
+
+
+    /*
+     * Generate a unique ID for this request.
+     */
+
+    const currentRequestId =
+        ++searchRequestId;
+
 
     status.className =
         "status";
 
     status.textContent =
-        `Finding ${selectedCategory.toLowerCase()} recipes...`;
+        `Finding ${requestCategory.toLowerCase()} recipes...`;
 
 
     results.classList.add(
@@ -721,13 +1052,7 @@ async function findRecipes() {
     container.innerHTML = "";
 
 
-
     try {
-
-
-        // ----------------------------------------------------
-        // API REQUEST
-        // ----------------------------------------------------
 
         const response =
             await fetch(
@@ -749,7 +1074,7 @@ async function findRecipes() {
                             ingredients,
 
                         category:
-                            selectedCategory
+                            requestCategory
 
                     })
 
@@ -761,10 +1086,44 @@ async function findRecipes() {
             await response.json();
 
 
+        /*
+         * ====================================================
+         * IGNORE OLD REQUESTS
+         * ====================================================
+         *
+         * If the user has started another search after this
+         * request, this response is stale.
+         */
 
-        // ----------------------------------------------------
-        // ERROR CHECK
-        // ----------------------------------------------------
+        if (
+            currentRequestId !== searchRequestId
+        ) {
+
+            console.log(
+                "Ignoring stale recipe search response."
+            );
+
+            return;
+
+        }
+
+
+        /*
+         * Also make sure the category has not changed.
+         */
+
+        if (
+            requestCategory !== selectedCategory
+        ) {
+
+            console.log(
+                "Ignoring recipe response because category changed."
+            );
+
+            return;
+
+        }
+
 
         if (!data.success) {
 
@@ -777,13 +1136,16 @@ async function findRecipes() {
         }
 
 
+        /*
+         * Clear the container again immediately before rendering.
+         */
 
-        // ----------------------------------------------------
-        // DISPLAY RESULTS
-        // ----------------------------------------------------
+        container.innerHTML = "";
+
 
         displayRecipes(
-            data.results
+            data.results,
+            requestCategory
         );
 
 
@@ -792,7 +1154,7 @@ async function findRecipes() {
 
 
         status.textContent =
-            `Found ${data.results.length} matching ${selectedCategory.toLowerCase()} recipes.`;
+            `Found ${data.results.length} matching ${requestCategory.toLowerCase()} recipes.`;
 
 
         results.classList.remove(
@@ -800,14 +1162,23 @@ async function findRecipes() {
         );
 
 
-        // Scroll to results
-
         setTimeout(() => {
 
-            results.scrollIntoView({
-                behavior: "smooth",
-                block: "start"
-            });
+            /*
+             * Only scroll if this is still the current request.
+             */
+
+            if (
+                currentRequestId === searchRequestId &&
+                requestCategory === selectedCategory
+            ) {
+
+                results.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+
+            }
 
         }, 100);
 
@@ -816,6 +1187,20 @@ async function findRecipes() {
 
 
     catch (error) {
+
+
+        /*
+         * Do not display an error from an old request.
+         */
+
+        if (
+            currentRequestId !== searchRequestId
+        ) {
+
+            return;
+
+        }
+
 
         status.className =
             "status error";
@@ -833,7 +1218,10 @@ async function findRecipes() {
 // DISPLAY RECIPES
 // ============================================================
 
-function displayRecipes(recipes) {
+function displayRecipes(
+    recipes,
+    category
+) {
 
 
     const container =
@@ -849,7 +1237,7 @@ function displayRecipes(recipes) {
             <div class="empty-state">
 
                 No matching ${escapeHtml(
-                    selectedCategory.toLowerCase()
+                    category.toLowerCase()
                 )} recipes found.
 
             </div>
@@ -861,13 +1249,16 @@ function displayRecipes(recipes) {
     }
 
 
+    /*
+     * Always clear previous results before rendering.
+     */
+
+    container.innerHTML = "";
+
+
     recipes.forEach(
         (recipe, index) => {
 
-
-            // ------------------------------------------------
-            // Match percentage
-            // ------------------------------------------------
 
             const percentage =
                 Number(
@@ -917,10 +1308,6 @@ function displayRecipes(recipes) {
                 [];
 
 
-            // ------------------------------------------------
-            // Match category
-            // ------------------------------------------------
-
             let matchCategory =
                 "Low match";
 
@@ -933,6 +1320,7 @@ function displayRecipes(recipes) {
                     "Excellent match";
 
             }
+
             else if (
                 safePercentage >= 50
             ) {
@@ -941,6 +1329,7 @@ function displayRecipes(recipes) {
                     "Good match";
 
             }
+
             else if (
                 safePercentage >= 25
             ) {
@@ -951,11 +1340,6 @@ function displayRecipes(recipes) {
             }
 
 
-
-            // ------------------------------------------------
-            // Recipe card
-            // ------------------------------------------------
-
             const card =
                 document.createElement(
                     "div"
@@ -964,6 +1348,12 @@ function displayRecipes(recipes) {
 
             card.className =
                 "recipe-result";
+
+
+            const recipeName =
+                String(
+                    recipe.name || ""
+                );
 
 
             card.innerHTML = `
@@ -979,7 +1369,7 @@ function displayRecipes(recipes) {
                         <h3 class="recipe-title">
 
                             ${escapeHtml(
-                                recipe.name
+                                recipeName
                             )}
 
                         </h3>
@@ -1124,9 +1514,8 @@ function displayRecipes(recipes) {
 
                 <button
                     class="view-recipe-btn"
-                    onclick="viewRecipe(
-                        '${escapeAttribute(recipe.name)}'
-                    )">
+                    onclick="viewRecipe(this.dataset.recipeName)"
+                    data-recipe-name="${escapeHtml(recipeName)}">
 
                     📖 View Recipe
 
@@ -1190,13 +1579,48 @@ async function viewRecipe(name) {
 
         const response =
             await fetch(
-                "/recipe-details?name=" +
-                encodeURIComponent(name)
+                "/make-recipe",
+                {
+
+                    method: "POST",
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json"
+
+                    },
+
+                    body: JSON.stringify({
+
+                        dish:
+                            name
+
+                    })
+
+                }
             );
 
 
         const data =
             await response.json();
+
+
+        console.log(
+            "Recipe response:",
+            data
+        );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                "Could not load recipe."
+            );
+
+        }
 
 
         if (!data.success) {
@@ -1210,21 +1634,46 @@ async function viewRecipe(name) {
         }
 
 
+        if (!data.recipe) {
+
+            throw new Error(
+                "Recipe data was not returned by the server."
+            );
+
+        }
+
+
         displayRecipeDetails(
-            data.result
+            data.recipe
         );
 
 
     }
+
+
     catch (error) {
+
+        console.error(
+            "VIEW RECIPE ERROR:",
+            error
+        );
+
 
         details.innerHTML = `
 
             <div class="empty-state">
 
-                ${escapeHtml(
-                    error.message
-                )}
+                <strong>
+                    Unable to load recipe
+                </strong>
+
+                <p style="margin-top:10px;">
+
+                    ${escapeHtml(
+                        error.message
+                    )}
+
+                </p>
 
             </div>
 
@@ -1249,24 +1698,232 @@ function displayRecipeDetails(recipe) {
         );
 
 
-    const ingredients =
-        recipe.ingredients || [];
+    if (!recipe) {
 
+        details.innerHTML = `
+
+            <div class="empty-state">
+
+                Recipe information is unavailable.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    const rawIngredients =
+        Array.isArray(
+            recipe.ingredients
+        )
+        ?
+        recipe.ingredients
+        :
+        [];
+
+
+    const ingredientDisplays =
+        rawIngredients.map(
+            item => {
+
+
+                if (
+                    item !== null &&
+                    typeof item === "object"
+                ) {
+
+
+                    if (
+                        item.display !== undefined &&
+                        item.display !== null &&
+                        String(
+                            item.display
+                        ).trim() !== ""
+                    ) {
+
+                        return String(
+                            item.display
+                        ).trim();
+
+                    }
+
+
+                    const quantity =
+                        item.quantity
+                        ?
+                        String(
+                            item.quantity
+                        ).trim()
+                        :
+                        "";
+
+
+                    const unit =
+                        item.unit
+                        ?
+                        String(
+                            item.unit
+                        ).trim()
+                        :
+                        "";
+
+
+                    const ingredient =
+                        item.ingredient
+                        ?
+                        String(
+                            item.ingredient
+                        ).trim()
+                        :
+                        "";
+
+
+                    return [
+
+                        quantity,
+
+                        unit,
+
+                        ingredient
+
+                    ]
+                    .filter(
+                        value =>
+                            value !== ""
+                    )
+                    .join(" ");
+
+                }
+
+
+                return String(
+                    item
+                );
+
+            }
+        )
+        .filter(
+            item =>
+                item &&
+                String(item).trim() !== ""
+        );
+
+
+
+    // =========================================================
+    // INSTRUCTIONS
+    // =========================================================
 
     const instructions =
-        recipe.instructions || [];
+        Array.isArray(
+            recipe.instructions
+        )
+        ?
+        recipe.instructions
+            .map(
+                item =>
+                    String(item).trim()
+            )
+            .filter(
+                item =>
+                    item !== ""
+            )
+        :
+        [];
 
+
+    // =========================================================
+    // TIME VALUES
+    // =========================================================
+
+    const prepTime =
+        recipe.prep_time !== null &&
+        recipe.prep_time !== undefined &&
+        String(
+            recipe.prep_time
+        ).trim() !== ""
+        ?
+        String(
+            recipe.prep_time
+        )
+        :
+        "N/A";
+
+
+    const cookTime =
+        recipe.cook_time !== null &&
+        recipe.cook_time !== undefined &&
+        String(
+            recipe.cook_time
+        ).trim() !== ""
+        ?
+        String(
+            recipe.cook_time
+        )
+        :
+        "N/A";
+
+
+    const servings =
+        recipe.servings !== null &&
+        recipe.servings !== undefined &&
+        String(
+            recipe.servings
+        ).trim() !== ""
+        ?
+        String(
+            recipe.servings
+        )
+        :
+        "N/A";
+
+
+    const calories =
+        recipe.calories !== null &&
+        recipe.calories !== undefined &&
+        String(
+            recipe.calories
+        ).trim() !== ""
+        ?
+        String(
+            recipe.calories
+        )
+        :
+        "N/A";
+
+
+    // =========================================================
+    // DESCRIPTION
+    // =========================================================
+
+    const description =
+        recipe.description !== null &&
+        recipe.description !== undefined &&
+        String(
+            recipe.description
+        ).trim() !== ""
+        ?
+        String(
+            recipe.description
+        ).trim()
+        :
+        "";
+
+
+    // =========================================================
+    // BUILD HTML
+    // =========================================================
 
     details.innerHTML = `
 
         <div class="recipe-detail-header">
 
-
             ${
                 recipe.category
-
                 ?
-
                 `
                 <span class="detail-category">
 
@@ -1276,46 +1933,37 @@ function displayRecipeDetails(recipe) {
 
                 </span>
                 `
-
                 :
-
                 ""
             }
-
 
             <h2>
 
                 ${escapeHtml(
-                    recipe.name
+                    recipe.name ||
+                    "Recipe"
                 )}
 
             </h2>
 
-
         </div>
 
 
-
         ${
-            recipe.description
-
+            description
             ?
-
             `
             <div class="recipe-description">
 
                 ${escapeHtml(
-                    recipe.description
+                    description
                 )}
 
             </div>
             `
-
             :
-
             ""
         }
-
 
 
         <div class="recipe-meta">
@@ -1334,14 +1982,12 @@ function displayRecipeDetails(recipe) {
                 <small>
 
                     ${escapeHtml(
-                        recipe.prep_time ||
-                        "N/A"
+                        prepTime
                     )}
 
                 </small>
 
             </div>
-
 
 
             <div>
@@ -1357,14 +2003,12 @@ function displayRecipeDetails(recipe) {
                 <small>
 
                     ${escapeHtml(
-                        recipe.cook_time ||
-                        "N/A"
+                        cookTime
                     )}
 
                 </small>
 
             </div>
-
 
 
             <div>
@@ -1380,14 +2024,12 @@ function displayRecipeDetails(recipe) {
                 <small>
 
                     ${escapeHtml(
-                        recipe.servings ||
-                        "N/A"
+                        servings
                     )}
 
                 </small>
 
             </div>
-
 
 
             <div>
@@ -1403,8 +2045,7 @@ function displayRecipeDetails(recipe) {
                 <small>
 
                     ${escapeHtml(
-                        recipe.calories ||
-                        "N/A"
+                        calories
                     )}
 
                 </small>
@@ -1415,11 +2056,6 @@ function displayRecipeDetails(recipe) {
         </div>
 
 
-
-        <!-- =================================================
-             INGREDIENTS
-             ================================================= -->
-
         <div class="recipe-detail-section">
 
             <h3>
@@ -1429,13 +2065,12 @@ function displayRecipeDetails(recipe) {
 
             <ul class="recipe-ingredients">
 
-
                 ${
-                    ingredients.length > 0
+                    ingredientDisplays.length > 0
 
                     ?
 
-                    ingredients
+                    ingredientDisplays
                         .map(
                             item =>
                             `
@@ -1445,7 +2080,13 @@ function displayRecipeDetails(recipe) {
                                     ✓
                                 </span>
 
-                                ${escapeHtml(item)}
+                                <span>
+
+                                    ${escapeHtml(
+                                        item
+                                    )}
+
+                                </span>
 
                             </li>
                             `
@@ -1456,21 +2097,23 @@ function displayRecipeDetails(recipe) {
 
                     `
                     <li>
-                        Ingredient information unavailable.
+
+                        <span>
+                            ✓
+                        </span>
+
+                        <span>
+                            Ingredient information unavailable.
+                        </span>
+
                     </li>
                     `
                 }
-
 
             </ul>
 
         </div>
 
-
-
-        <!-- =================================================
-             INSTRUCTIONS
-             ================================================= -->
 
         <div class="recipe-detail-section">
 
@@ -1480,7 +2123,6 @@ function displayRecipeDetails(recipe) {
 
 
             <ol class="recipe-instructions">
-
 
                 ${
                     instructions.length > 0
@@ -1501,7 +2143,9 @@ function displayRecipeDetails(recipe) {
 
                                 <span>
 
-                                    ${escapeHtml(item)}
+                                    ${escapeHtml(
+                                        item
+                                    )}
 
                                 </span>
 
@@ -1514,16 +2158,22 @@ function displayRecipeDetails(recipe) {
 
                     `
                     <li>
-                        Cooking instructions are not available.
+
+                        <span class="step-number">
+                            !
+                        </span>
+
+                        <span>
+                            Cooking instructions are not available.
+                        </span>
+
                     </li>
                     `
                 }
 
-
             </ol>
 
         </div>
-
 
 
         <div class="recipe-source-note">
@@ -1561,7 +2211,14 @@ function closeRecipeModal() {
 
 function escapeHtml(value) {
 
-    return String(value)
+    return String(
+        value === null ||
+        value === undefined
+            ?
+            ""
+            :
+            value
+    )
 
         .replaceAll(
             "&",
@@ -1586,28 +2243,6 @@ function escapeHtml(value) {
         .replaceAll(
             "'",
             "&#039;"
-        );
-
-}
-
-
-
-// ============================================================
-// ESCAPE ATTRIBUTE
-// ============================================================
-
-function escapeAttribute(value) {
-
-    return String(value)
-
-        .replaceAll(
-            "\\",
-            "\\\\"
-        )
-
-        .replaceAll(
-            "'",
-            "\\'"
         );
 
 }

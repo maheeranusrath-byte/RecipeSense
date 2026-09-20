@@ -160,6 +160,7 @@ Add the rice and cook."></textarea>
                  ================================================= -->
 
             <button
+                id="analyzeButton"
                 class="primary-btn"
                 onclick="analyzeRecipe()">
 
@@ -343,6 +344,10 @@ async function analyzeRecipe() {
         document.getElementById("results");
 
 
+    const analyzeButton =
+        document.getElementById("analyzeButton");
+
+
 
     // --------------------------------------------------------
     // VALIDATION
@@ -389,6 +394,11 @@ async function analyzeRecipe() {
 
     results.classList.add("hidden");
 
+    analyzeButton.disabled = true;
+
+    analyzeButton.textContent =
+        "Analyzing...";
+
 
 
     try {
@@ -396,6 +406,9 @@ async function analyzeRecipe() {
 
         // ----------------------------------------------------
         // SEND RECIPE TEXT TO BACKEND
+        //
+        // IMPORTANT:
+        // Flask expects the key "recipe"
         // ----------------------------------------------------
 
         const response =
@@ -409,13 +422,17 @@ async function analyzeRecipe() {
 
                 body: JSON.stringify({
 
-                    recipe_text: text
+                    recipe: text
 
                 })
 
             });
 
 
+
+        // ----------------------------------------------------
+        // READ RESPONSE
+        // ----------------------------------------------------
 
         const data =
             await response.json();
@@ -426,10 +443,12 @@ async function analyzeRecipe() {
         // ERROR CHECK
         // ----------------------------------------------------
 
-        if (!data.success) {
+        if (!response.ok || !data.success) {
 
             throw new Error(
-                data.error || "Analysis failed."
+                data.message ||
+                data.error ||
+                "Analysis failed."
             );
 
         }
@@ -449,9 +468,13 @@ async function analyzeRecipe() {
 
         // ----------------------------------------------------
         // DISPLAY ANALYSIS
+        //
+        // IMPORTANT:
+        // Flask returns ingredients/actions/substitutions
+        // directly inside data.
         // ----------------------------------------------------
 
-        displayAnalysis(data.result);
+        displayAnalysis(data);
 
 
 
@@ -469,7 +492,9 @@ async function analyzeRecipe() {
         results.classList.remove("hidden");
 
 
-        // Scroll smoothly to results
+        // ----------------------------------------------------
+        // SCROLL TO RESULTS
+        // ----------------------------------------------------
 
         setTimeout(() => {
 
@@ -486,11 +511,27 @@ async function analyzeRecipe() {
 
     catch (error) {
 
+        console.error(
+            "Analyze Recipe Error:",
+            error
+        );
+
         status.className =
             "status error";
 
         status.textContent =
-            error.message;
+            error.message ||
+            "Analysis failed.";
+
+    }
+
+
+    finally {
+
+        analyzeButton.disabled = false;
+
+        analyzeButton.textContent =
+            "Analyze Recipe";
 
     }
 
@@ -536,34 +577,70 @@ function displayAnalysis(result) {
     // INGREDIENTS
     // --------------------------------------------------------
 
-    result.ingredients.forEach(item => {
+    const ingredients =
+        Array.isArray(result.ingredients)
+            ? result.ingredients
+            : [];
 
 
-        const div =
-            document.createElement("div");
+    if (ingredients.length === 0) {
+
+        ingredientContainer.innerHTML =
+            '<div class="empty-state">' +
+            'No ingredients detected.' +
+            '</div>';
+
+    }
+    else {
+
+        ingredients.forEach(item => {
+
+            const div =
+                document.createElement("div");
 
 
-        div.className =
-            "analysis-item";
+            div.className =
+                "analysis-item";
 
 
-        div.innerHTML = `
-
-            <strong>
-                ${escapeHtml(item.normalized_ingredient)}
-            </strong>
-
-            <span>
-                ${escapeHtml(item.quantity || "")}
-                ${escapeHtml(item.unit || "")}
-            </span>
-
-        `;
+            const ingredient =
+                item.normalized_ingredient ||
+                item.ingredient ||
+                "Unknown ingredient";
 
 
-        ingredientContainer.appendChild(div);
+            const quantity =
+                item.quantity ||
+                "";
 
-    });
+
+            const unit =
+                item.unit ||
+                "";
+
+
+            div.innerHTML = `
+
+                <strong>
+                    ${escapeHtml(ingredient)}
+                </strong>
+
+                <span>
+                    ${escapeHtml(quantity)}
+                    ${quantity && unit ? " " : ""}
+                    ${escapeHtml(unit)}
+                </span>
+
+            `;
+
+
+            ingredientContainer.appendChild(
+                div
+            );
+
+        });
+
+    }
 
 
 
@@ -571,20 +648,23 @@ function displayAnalysis(result) {
     // COOKING ACTIONS
     // --------------------------------------------------------
 
-    if (result.actions.length === 0) {
+    const actions =
+        Array.isArray(result.actions)
+            ? result.actions
+            : [];
 
+
+    if (actions.length === 0) {
 
         actionContainer.innerHTML =
             '<span class="ingredient-detail">' +
             'No cooking actions detected.' +
             '</span>';
 
+    }
+    else {
 
-    } else {
-
-
-        result.actions.forEach(action => {
-
+        actions.forEach(action => {
 
             const span =
                 document.createElement("span");
@@ -598,7 +678,9 @@ function displayAnalysis(result) {
                 action;
 
 
-            actionContainer.appendChild(span);
+            actionContainer.appendChild(
+                span
+            );
 
         });
 
@@ -610,21 +692,26 @@ function displayAnalysis(result) {
     // SUBSTITUTIONS
     // --------------------------------------------------------
 
-    if (result.substitutions.length === 0) {
+    const substitutions =
+        Array.isArray(result.substitutions)
+            ? result.substitutions
+            : [];
 
+
+    if (substitutions.length === 0) {
 
         substitutionContainer.innerHTML =
             '<div class="empty-state">' +
             'No substitutions available.' +
             '</div>';
 
-
         return;
+
     }
 
 
 
-    result.substitutions.forEach(group => {
+    substitutions.forEach(group => {
 
 
         const wrapper =
@@ -635,49 +722,83 @@ function displayAnalysis(result) {
             "substitution-item";
 
 
+        const ingredient =
+            group.ingredient ||
+            "Unknown ingredient";
+
 
         let html = `
 
             <strong>
-                ${escapeHtml(group.ingredient)}
+                ${escapeHtml(ingredient)}
             </strong>
 
         `;
 
 
+        const substitutes =
+            Array.isArray(group.substitutes)
+                ? group.substitutes
+                : [];
 
-        group.substitutes.forEach(item => {
 
+        if (substitutes.length === 0) {
 
             html += `
 
-                <div style="margin-top:12px;">
+                <div
+                    style="
+                        margin-top: 8px;
+                        color: #777;
+                    ">
 
-                    <strong>
-                        ${escapeHtml(item.substitute)}
-                    </strong>
-
-
-                    <div class="ratio">
-
-                        Ratio:
-                        ${escapeHtml(item.ratio)}
-
-                    </div>
-
-
-                    <div class="reason">
-
-                        ${escapeHtml(item.reason)}
-
-                    </div>
+                    No substitution available.
 
                 </div>
 
             `;
 
-        });
+        }
+        else {
 
+            substitutes.forEach(item => {
+
+                html += `
+
+                    <div style="margin-top:12px;">
+
+                        <strong>
+                            ${escapeHtml(
+                                item.substitute || ""
+                            )}
+                        </strong>
+
+
+                        <div class="ratio">
+
+                            Ratio:
+                            ${escapeHtml(
+                                item.ratio || "N/A"
+                            )}
+
+                        </div>
+
+
+                        <div class="reason">
+
+                            ${escapeHtml(
+                                item.reason || ""
+                            )}
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            });
+
+        }
 
 
         wrapper.innerHTML =
