@@ -1,8 +1,24 @@
+# ============================================================
+# RecipeSense
+# Build SQLite Recipe Database
+#
+# SQLite contains:
+# - Recipe search index
+# - Ingredient index
+# - Compressed complete recipe details
+#
+# This version uses the REAL RecipeId from
+# recipes_cleaned.parquet.
+# ============================================================
+
 import json
 import re
 import sqlite3
+import zlib
+
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -15,13 +31,11 @@ PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
 
 PARQUET_FILE = (
-    DATA_DIR
-    / "recipes_cleaned.parquet"
+    DATA_DIR / "recipes_cleaned.parquet"
 )
 
 SQLITE_FILE = (
-    DATA_DIR
-    / "recipe_index.db"
+    DATA_DIR / "recipe_index.db"
 )
 
 
@@ -29,8 +43,63 @@ SQLITE_FILE = (
 # INGREDIENT NORMALIZATION
 # ============================================================
 
-def normalize_ingredient(ingredient):
+INGREDIENT_ALIASES = {
 
+    "chicken breast": "chicken",
+    "chicken thigh": "chicken",
+    "chicken thighs": "chicken",
+    "chicken breasts": "chicken",
+
+    "garlic clove": "garlic",
+    "garlic cloves": "garlic",
+
+    "onion": "onion",
+    "onions": "onion",
+
+    "tomato": "tomato",
+    "tomatoes": "tomato",
+
+    "potato": "potato",
+    "potatoes": "potato",
+
+    "carrot": "carrot",
+    "carrots": "carrot",
+
+    "egg": "egg",
+    "eggs": "egg",
+
+    "capsicum": "bell pepper",
+    "bell peppers": "bell pepper",
+
+    "green chilli": "green chili",
+    "green chillies": "green chili",
+    "green chilies": "green chili",
+
+    "yogurt": "yogurt",
+    "yoghurt": "yogurt",
+    "curd": "yogurt",
+
+    "rice": "rice",
+
+    "flour": "flour",
+    "all purpose flour": "flour",
+    "maida": "flour",
+
+    "sugar": "sugar",
+
+    "salt": "salt",
+
+    "butter": "butter",
+
+    "oil": "oil",
+    "vegetable oil": "oil",
+    "olive oil": "oil"
+}
+
+
+def normalize_ingredient(
+    ingredient
+):
     if ingredient is None:
         return ""
 
@@ -38,18 +107,10 @@ def normalize_ingredient(ingredient):
         ingredient
     ).lower().strip()
 
-    # --------------------------------------------------------
-    # Replace common symbols
-    # --------------------------------------------------------
-
     ingredient = ingredient.replace(
         "&",
         " and "
     )
-
-    # --------------------------------------------------------
-    # Remove punctuation
-    # --------------------------------------------------------
 
     ingredient = re.sub(
         r"[^a-z0-9\s]",
@@ -57,19 +118,11 @@ def normalize_ingredient(ingredient):
         ingredient
     )
 
-    # --------------------------------------------------------
-    # Remove extra spaces
-    # --------------------------------------------------------
-
     ingredient = re.sub(
         r"\s+",
         " ",
         ingredient
     ).strip()
-
-    # --------------------------------------------------------
-    # Quantity / unit words
-    # --------------------------------------------------------
 
     words_to_remove = {
 
@@ -121,13 +174,7 @@ def normalize_ingredient(ingredient):
         if word not in words_to_remove
     ]
 
-    ingredient = " ".join(
-        words
-    )
-
-    # --------------------------------------------------------
-    # Preparation / descriptor words
-    # --------------------------------------------------------
+    ingredient = " ".join(words)
 
     preparation_words = [
 
@@ -139,23 +186,18 @@ def normalize_ingredient(ingredient):
         "shredded",
         "crushed",
         "ground",
-
         "fresh",
         "frozen",
         "cooked",
         "raw",
-
         "melted",
         "softened",
-
         "large",
         "small",
         "medium",
-
         "boneless",
         "skinless",
         "seedless",
-
         "ripe",
         "whole",
         "halved",
@@ -166,16 +208,10 @@ def normalize_ingredient(ingredient):
     for word in preparation_words:
 
         ingredient = re.sub(
-            r"\b"
-            + re.escape(word)
-            + r"\b",
+            r"\b" + re.escape(word) + r"\b",
             "",
             ingredient
         )
-
-    # --------------------------------------------------------
-    # Ingredient-form words
-    # --------------------------------------------------------
 
     ingredient = re.sub(
         r"\bcloves?\b",
@@ -213,29 +249,17 @@ def normalize_ingredient(ingredient):
         ingredient
     )
 
-    # --------------------------------------------------------
-    # Remove "of"
-    # --------------------------------------------------------
-
     ingredient = re.sub(
         r"\bof\b",
         "",
         ingredient
     )
 
-    # --------------------------------------------------------
-    # Remove extra spaces
-    # --------------------------------------------------------
-
     ingredient = re.sub(
         r"\s+",
         " ",
         ingredient
     ).strip()
-
-    # --------------------------------------------------------
-    # Basic plural normalization
-    # --------------------------------------------------------
 
     if ingredient.endswith("ies"):
 
@@ -254,70 +278,9 @@ def normalize_ingredient(ingredient):
     return ingredient.strip()
 
 
-# ============================================================
-# INGREDIENT ALIASES
-# ============================================================
-
-INGREDIENT_ALIASES = {
-
-    "chicken breast": "chicken",
-    "chicken thigh": "chicken",
-    "chicken thighs": "chicken",
-    "chicken breasts": "chicken",
-
-    "garlic clove": "garlic",
-    "garlic cloves": "garlic",
-
-    "onion": "onion",
-    "onions": "onion",
-
-    "tomato": "tomato",
-    "tomatoes": "tomato",
-
-    "potato": "potato",
-    "potatoes": "potato",
-
-    "carrot": "carrot",
-    "carrots": "carrot",
-
-    "egg": "egg",
-    "eggs": "egg",
-
-    "capsicum": "bell pepper",
-    "bell peppers": "bell pepper",
-
-    "green chilli": "green chili",
-    "green chillies": "green chili",
-    "green chilies": "green chili",
-
-    "yogurt": "yogurt",
-    "yoghurt": "yogurt",
-
-    "curd": "yogurt",
-
-    "rice": "rice",
-
-    "flour": "flour",
-    "all purpose flour": "flour",
-    "maida": "flour",
-
-    "sugar": "sugar",
-
-    "salt": "salt",
-
-    "butter": "butter",
-
-    "oil": "oil",
-    "vegetable oil": "oil",
-    "olive oil": "oil"
-}
-
-
-# ============================================================
-# NORMALIZE WITH ALIASES
-# ============================================================
-
-def normalize_with_alias(ingredient):
+def normalize_with_alias(
+    ingredient
+):
 
     ingredient = normalize_ingredient(
         ingredient
@@ -333,100 +296,162 @@ def normalize_with_alias(ingredient):
 
 
 # ============================================================
-# CONVERT INGREDIENT LIST TO JSON
+# JSON SAFE CONVERSION
 # ============================================================
 
-def serialize_ingredients(value):
+def json_safe(value):
 
-    if value is None:
-        return "[]"
+    if isinstance(
+        value,
+        dict
+    ):
 
-    # --------------------------------------------------------
-    # Handle pandas / NumPy arrays
-    # --------------------------------------------------------
+        return {
+            str(key): json_safe(val)
+            for key, val in value.items()
+        }
 
-    try:
-
-        if hasattr(
-            value,
-            "tolist"
-        ):
-
-            value = value.tolist()
-
-    except Exception:
-        pass
-
-    # --------------------------------------------------------
-    # Convert to list
-    # --------------------------------------------------------
-
-    if not isinstance(
+    if isinstance(
         value,
         (list, tuple)
     ):
 
-        return "[]"
+        return [
+            json_safe(item)
+            for item in value
+        ]
 
-    ingredients = []
+    if isinstance(
+        value,
+        np.ndarray
+    ):
 
-    for ingredient in value:
+        return [
+            json_safe(item)
+            for item in value.tolist()
+        ]
 
-        if ingredient is None:
-            continue
+    if isinstance(
+        value,
+        np.integer
+    ):
+
+        return int(value)
+
+    if isinstance(
+        value,
+        np.floating
+    ):
+
+        if np.isnan(value):
+            return None
+
+        return float(value)
+
+    if value is None:
+        return None
+
+    try:
+
+        if pd.isna(value):
+            return None
+
+    except Exception:
+        pass
+
+    return value
+
+
+def clean_value(
+    value
+):
+
+    if value is None:
+        return ""
+
+    try:
+
+        if pd.isna(value):
+            return ""
+
+    except Exception:
+        pass
+
+    return json_safe(value)
+
+
+# ============================================================
+# CONVERT LIST-LIKE DATA
+# ============================================================
+
+def to_list(value):
+
+    if value is None:
+        return []
+
+    if isinstance(
+        value,
+        np.ndarray
+    ):
+
+        return value.tolist()
+
+    if isinstance(
+        value,
+        (list, tuple)
+    ):
+
+        return list(value)
+
+    try:
+
+        if pd.isna(value):
+            return []
+
+    except Exception:
+        pass
+
+    # Some datasets may contain
+    # string representations of lists.
+
+    if isinstance(
+        value,
+        str
+    ):
+
+        text = value.strip()
+
+        if not text:
+            return []
 
         try:
 
-            if pd.isna(
-                ingredient
+            parsed = json.loads(text)
+
+            if isinstance(
+                parsed,
+                list
             ):
 
-                continue
+                return parsed
 
         except Exception:
             pass
 
-        ingredient = str(
-            ingredient
-        ).strip()
+        return [text]
 
-        if ingredient:
-            ingredients.append(
-                ingredient
-            )
-
-    return json.dumps(
-        ingredients,
-        ensure_ascii=False
-    )
+    return [value]
 
 
 # ============================================================
-# BUILD DATABASE
+# CREATE DATABASE
 # ============================================================
 
-def build_database():
+def create_database():
 
-    print("=" * 70)
-    print("       RecipeSense SQLite Index Builder")
-    print("=" * 70)
-    print()
-
-    print(
-        "Source:",
-        PARQUET_FILE
+    DATA_DIR.mkdir(
+        exist_ok=True
     )
-
-    print(
-        "Output:",
-        SQLITE_FILE
-    )
-
-    print()
-
-    # --------------------------------------------------------
-    # Check Parquet file
-    # --------------------------------------------------------
 
     if not PARQUET_FILE.exists():
 
@@ -435,133 +460,105 @@ def build_database():
             f"{PARQUET_FILE}"
         )
 
-    # --------------------------------------------------------
-    # Delete old database
-    # --------------------------------------------------------
-
     if SQLITE_FILE.exists():
 
+        print()
         print(
             "Removing old SQLite database..."
         )
 
         SQLITE_FILE.unlink()
 
-        print(
-            "Old database removed."
-        )
-
-        print()
-
-    # --------------------------------------------------------
-    # Load required columns
-    # --------------------------------------------------------
-
+    print()
+    print("=" * 70)
     print(
-        "Loading recipes_cleaned.parquet..."
+        "       RecipeSense SQLite Database Builder"
     )
+    print("=" * 70)
 
-    dataframe = pd.read_parquet(
-        PARQUET_FILE,
-        columns=[
-            "RecipeId",
-            "Name",
-            "RecipeCategory",
-            "RecipeIngredientParts"
-        ]
-    )
-
+    print()
     print(
-        f"Rows loaded: {len(dataframe):,}"
+        "Source:"
+    )
+    print(
+        PARQUET_FILE
     )
 
     print()
-
-    # ========================================================
-    # IMPORTANT
-    # ========================================================
-    #
-    # RecipeId MUST come from the actual RecipeId column.
-    #
-    # We DO NOT use:
-    #
-    #     dataframe.index
-    #
-    # and we DO NOT generate new IDs.
-    #
-    # This is the fix for the Sambar -> Peach Cobbler bug.
-    # ========================================================
-
     print(
-        "Preparing RecipeId values..."
+        "Destination:"
+    )
+    print(
+        SQLITE_FILE
     )
 
-    dataframe["RecipeId"] = pd.to_numeric(
-        dataframe["RecipeId"],
+    print()
+    print(
+        "Reading recipe dataset..."
+    )
+
+    columns = [
+
+        "RecipeId",
+        "Name",
+        "Description",
+        "RecipeCategory",
+        "Keywords",
+        "CookTime",
+        "PrepTime",
+        "TotalTime",
+        "RecipeIngredientQuantities",
+        "RecipeIngredientParts",
+        "RecipeInstructions",
+        "RecipeServings",
+        "Calories"
+    ]
+
+    df = pd.read_parquet(
+        PARQUET_FILE,
+        columns=columns
+    )
+
+    print(
+        "Rows loaded:",
+        len(df)
+    )
+
+    print()
+    print(
+        "Converting RecipeId..."
+    )
+
+    df["RecipeId"] = pd.to_numeric(
+        df["RecipeId"],
         errors="coerce"
     )
 
-    # Remove rows without valid RecipeId
+    df = df.dropna(
+        subset=["RecipeId"]
+    )
 
-    dataframe = dataframe[
-        dataframe["RecipeId"].notna()
-    ].copy()
-
-    # Convert float IDs such as 81933.0
-    # into integer IDs such as 81933
-
-    dataframe["RecipeId"] = (
-        dataframe["RecipeId"]
+    df["RecipeId"] = (
+        df["RecipeId"]
         .astype("int64")
     )
 
-    print(
-        f"Valid recipes: {len(dataframe):,}"
-    )
-
-    print()
-
-    # --------------------------------------------------------
-    # Check duplicate RecipeIds
-    # --------------------------------------------------------
-
-    duplicate_count = (
-        dataframe["RecipeId"]
-        .duplicated()
-        .sum()
+    # Remove duplicate RecipeIds.
+    df = df.drop_duplicates(
+        subset=["RecipeId"],
+        keep="first"
     )
 
     print(
-        f"Duplicate RecipeIds: "
-        f"{duplicate_count:,}"
+        "Valid unique recipes:",
+        len(df)
     )
-
-    if duplicate_count > 0:
-
-        print(
-            "Removing duplicate RecipeIds..."
-        )
-
-        dataframe = (
-            dataframe
-            .drop_duplicates(
-                subset=["RecipeId"],
-                keep="first"
-            )
-            .copy()
-        )
-
-    print(
-        f"Final recipes: "
-        f"{len(dataframe):,}"
-    )
-
-    print()
 
     # ========================================================
-    # CREATE SQLITE DATABASE
+    # SQLITE
     # ========================================================
 
+    print()
     print(
         "Creating SQLite database..."
     )
@@ -572,29 +569,27 @@ def build_database():
 
     cursor = connection.cursor()
 
-    # --------------------------------------------------------
-    # Performance settings
-    # --------------------------------------------------------
+    # Performance settings during build.
 
     cursor.execute(
-        "PRAGMA journal_mode = WAL"
+        "PRAGMA journal_mode=OFF"
     )
 
     cursor.execute(
-        "PRAGMA synchronous = NORMAL"
+        "PRAGMA synchronous=OFF"
     )
 
     cursor.execute(
-        "PRAGMA temp_store = MEMORY"
+        "PRAGMA temp_store=MEMORY"
     )
 
     cursor.execute(
-        "PRAGMA cache_size = -200000"
+        "PRAGMA cache_size=-100000"
     )
 
-    # --------------------------------------------------------
-    # Recipes table
-    # --------------------------------------------------------
+    # ========================================================
+    # TABLES
+    # ========================================================
 
     cursor.execute(
         """
@@ -606,14 +601,12 @@ def build_database():
 
             category TEXT,
 
-            ingredients TEXT NOT NULL
+            ingredients TEXT NOT NULL,
+
+            details BLOB
         )
         """
     )
-
-    # --------------------------------------------------------
-    # Ingredient index table
-    # --------------------------------------------------------
 
     cursor.execute(
         """
@@ -629,137 +622,61 @@ def build_database():
     connection.commit()
 
     # ========================================================
-    # INSERT DATA
+    # INSERT RECIPES
     # ========================================================
+
+    print()
+    print(
+        "Building recipe records..."
+    )
 
     recipe_rows = []
 
     ingredient_rows = []
 
-    total_rows = len(
-        dataframe
-    )
+    total = len(df)
 
-    print(
-        "Building recipe index..."
-    )
-
-    print()
-
-    for position, (_, row) in enumerate(
-        dataframe.iterrows(),
-        start=1
-    ):
-
-        # ----------------------------------------------------
-        # REAL RecipeId
-        # ----------------------------------------------------
+    for index, row in df.iterrows():
 
         recipe_id = int(
             row["RecipeId"]
         )
 
-        # ----------------------------------------------------
-        # Name
-        # ----------------------------------------------------
-
-        name = row["Name"]
-
-        if name is None:
-
-            name = ""
-
-        else:
-
-            name = str(
-                name
-            ).strip()
-
-        if not name:
-            continue
-
-        # ----------------------------------------------------
-        # Category
-        # ----------------------------------------------------
-
-        category = row[
-            "RecipeCategory"
-        ]
-
-        if category is None:
-
-            category = ""
-
-        else:
-
-            category = str(
-                category
-            ).strip()
-
-        # ----------------------------------------------------
-        # Original ingredient list
-        # ----------------------------------------------------
-
-        raw_ingredients = row[
-            "RecipeIngredientParts"
-        ]
-
-        # Convert NumPy array/list
-        # into normal Python list
-
-        if raw_ingredients is None:
-
-            raw_ingredients = []
-
-        else:
-
-            try:
-
-                if hasattr(
-                    raw_ingredients,
-                    "tolist"
-                ):
-
-                    raw_ingredients = (
-                        raw_ingredients.tolist()
-                    )
-
-            except Exception:
-                pass
-
-        if not isinstance(
-            raw_ingredients,
-            (list, tuple)
-        ):
-
-            raw_ingredients = []
-
-        # ----------------------------------------------------
-        # Store original ingredient list
-        # ----------------------------------------------------
-
-        ingredients_json = (
-            serialize_ingredients(
-                raw_ingredients
-            )
+        name = clean_value(
+            row["Name"]
         )
 
-        recipe_rows.append(
-            (
-                recipe_id,
-                name,
-                category,
-                ingredients_json
-            )
+        category = clean_value(
+            row["RecipeCategory"]
+        )
+
+        ingredients = to_list(
+            row[
+                "RecipeIngredientParts"
+            ]
+        )
+
+        quantities = to_list(
+            row[
+                "RecipeIngredientQuantities"
+            ]
+        )
+
+        instructions = to_list(
+            row[
+                "RecipeInstructions"
+            ]
         )
 
         # ----------------------------------------------------
-        # Build normalized ingredient index
+        # Normalize ingredients for search index
         # ----------------------------------------------------
 
-        unique_ingredients = set()
+        normalized_ingredients = []
 
-        for ingredient in raw_ingredients:
+        seen_ingredients = set()
+
+        for ingredient in ingredients:
 
             normalized = (
                 normalize_with_alias(
@@ -767,125 +684,210 @@ def build_database():
                 )
             )
 
-            if normalized:
+            if (
+                normalized
+                and normalized
+                not in seen_ingredients
+            ):
 
-                unique_ingredients.add(
+                normalized_ingredients.append(
                     normalized
                 )
 
-        for ingredient in unique_ingredients:
-
-            ingredient_rows.append(
-                (
-                    ingredient,
-                    recipe_id
+                seen_ingredients.add(
+                    normalized
                 )
+
+                ingredient_rows.append(
+                    (
+                        normalized,
+                        recipe_id
+                    )
+                )
+
+        # ----------------------------------------------------
+        # Complete recipe data
+        # ----------------------------------------------------
+
+        details = {
+
+            "RecipeId": recipe_id,
+
+            "Name": name,
+
+            "Description": clean_value(
+                row["Description"]
+            ),
+
+            "RecipeCategory": category,
+
+            "Keywords": clean_value(
+                row["Keywords"]
+            ),
+
+            "CookTime": clean_value(
+                row["CookTime"]
+            ),
+
+            "PrepTime": clean_value(
+                row["PrepTime"]
+            ),
+
+            "TotalTime": clean_value(
+                row["TotalTime"]
+            ),
+
+            "RecipeIngredientQuantities":
+                quantities,
+
+            "RecipeIngredientParts":
+                ingredients,
+
+            "RecipeInstructions":
+                instructions,
+
+            "RecipeServings": clean_value(
+                row["RecipeServings"]
+            ),
+
+            "Calories": clean_value(
+                row["Calories"]
             )
+        }
+
+        details_json = json.dumps(
+            json_safe(details),
+            ensure_ascii=False,
+            separators=(
+                ",",
+                ":"
+            )
+        )
+
+        # Compress recipe details.
+        compressed_details = (
+            zlib.compress(
+                details_json.encode(
+                    "utf-8"
+                ),
+                level=6
+            )
+        )
+
+        recipe_rows.append(
+            (
+                recipe_id,
+                str(name),
+                str(category),
+                json.dumps(
+                    normalized_ingredients,
+                    ensure_ascii=False
+                ),
+                compressed_details
+            )
+        )
 
         # ----------------------------------------------------
-        # Batch insert
+        # Batch insertion
         # ----------------------------------------------------
 
-        if (
-            len(recipe_rows)
-            >= 5000
-        ):
+        if len(recipe_rows) >= 2000:
 
             cursor.executemany(
                 """
-                INSERT OR IGNORE INTO recipes
+                INSERT INTO recipes
                 (
                     recipe_id,
                     name,
                     category,
-                    ingredients
+                    ingredients,
+                    details
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 recipe_rows
-            )
-
-            cursor.executemany(
-                """
-                INSERT INTO ingredient_index
-                (
-                    ingredient,
-                    recipe_id
-                )
-                VALUES (?, ?)
-                """,
-                ingredient_rows
             )
 
             connection.commit()
 
             recipe_rows.clear()
-            ingredient_rows.clear()
-
-        # ----------------------------------------------------
-        # Progress
-        # ----------------------------------------------------
 
         if (
-            position % 25000 == 0
-            or position == total_rows
+            index % 25000 == 0
+            or index == total - 1
         ):
 
-            percentage = (
-                position
-                / total_rows
-            ) * 100
-
-            print(
-                f"Processed "
-                f"{position:,} / "
-                f"{total_rows:,} "
-                f"({percentage:.1f}%)"
+            percent = (
+                (index + 1)
+                / total
+                * 100
             )
 
-    # ========================================================
-    # INSERT REMAINING ROWS
-    # ========================================================
+            print(
+                f"\rProgress: "
+                f"{index + 1:,}/{total:,} "
+                f"({percent:.1f}%)",
+                end=""
+            )
+
+    # Remaining recipes.
 
     if recipe_rows:
 
         cursor.executemany(
             """
-            INSERT OR IGNORE INTO recipes
+            INSERT INTO recipes
             (
                 recipe_id,
                 name,
                 category,
-                ingredients
+                ingredients,
+                details
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             recipe_rows
         )
 
-    if ingredient_rows:
+        connection.commit()
 
-        cursor.executemany(
-            """
-            INSERT INTO ingredient_index
-            (
-                ingredient,
-                recipe_id
-            )
-            VALUES (?, ?)
-            """,
-            ingredient_rows
-        )
-
-    connection.commit()
+    print()
 
     # ========================================================
-    # CREATE INDEXES
+    # INSERT INGREDIENT INDEX
     # ========================================================
 
     print()
     print(
-        "Creating SQLite indexes..."
+        "Building ingredient index..."
+    )
+
+    cursor.executemany(
+        """
+        INSERT INTO ingredient_index
+        (
+            ingredient,
+            recipe_id
+        )
+        VALUES (?, ?)
+        """,
+        ingredient_rows
+    )
+
+    connection.commit()
+
+    print(
+        "Ingredient index rows:",
+        len(ingredient_rows)
+    )
+
+    # ========================================================
+    # INDEXES
+    # ========================================================
+
+    print()
+    print(
+        "Creating database indexes..."
     )
 
     cursor.execute(
@@ -902,10 +904,82 @@ def build_database():
         """
     )
 
+    cursor.execute(
+        """
+        CREATE INDEX idx_recipe_name
+        ON recipes(name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX idx_recipe_category
+        ON recipes(category)
+        """
+    )
+
     connection.commit()
 
     # ========================================================
-    # VERIFY DATABASE
+    # VERIFY SAMBAR
+    # ========================================================
+
+    print()
+    print("=" * 70)
+    print(
+        "Sambar verification:"
+    )
+    print("-" * 70)
+
+    cursor.execute(
+        """
+        SELECT recipe_id, name
+        FROM recipes
+        WHERE LOWER(name) LIKE '%sambar%'
+        LIMIT 10
+        """
+    )
+
+    sambar_rows = cursor.fetchall()
+
+    for recipe_id, name in sambar_rows:
+
+        print(
+            f"{recipe_id} -> {name}"
+        )
+
+    print("-" * 70)
+
+    # Exact Sambar.
+
+    cursor.execute(
+        """
+        SELECT recipe_id, name
+        FROM recipes
+        WHERE LOWER(name) = 'sambar'
+        LIMIT 1
+        """
+    )
+
+    exact_sambar = cursor.fetchone()
+
+    if exact_sambar:
+
+        print(
+            "Exact Sambar:",
+            exact_sambar[0],
+            "->",
+            exact_sambar[1]
+        )
+
+    else:
+
+        print(
+            "WARNING: Exact Sambar not found."
+        )
+
+    # ========================================================
+    # DATABASE STATS
     # ========================================================
 
     cursor.execute(
@@ -927,19 +1001,18 @@ def build_database():
 
     cursor.execute(
         """
-        SELECT recipe_id, name
-        FROM recipes
-        WHERE LOWER(name) LIKE '%sambar%'
-        LIMIT 10
+        SELECT COUNT(*)
+        FROM ingredient_index
         """
     )
 
-    sambar_rows = cursor.fetchall()
+    index_count = cursor.fetchone()[0]
 
     # ========================================================
-    # OPTIMIZE DATABASE
+    # OPTIMIZE
     # ========================================================
 
+    print()
     print(
         "Optimizing database..."
     )
@@ -948,48 +1021,34 @@ def build_database():
         "VACUUM"
     )
 
-    connection.commit()
-
     connection.close()
 
     # ========================================================
-    # FINAL OUTPUT
+    # FINAL
     # ========================================================
 
-    print()
-    print("=" * 70)
-    print("       SQLite DATABASE CREATED")
-    print("=" * 70)
+    database_size_mb = (
+        SQLITE_FILE.stat().st_size
+        / (1024 * 1024)
+    )
 
     print()
+    print("=" * 70)
 
     print(
-        f"Recipes indexed: "
+        "Recipes:",
         f"{recipe_count:,}"
     )
 
     print(
-        f"Ingredients indexed: "
+        "Unique ingredients:",
         f"{ingredient_count:,}"
     )
 
-    print()
-
     print(
-        "Sambar verification:"
+        "Ingredient index rows:",
+        f"{index_count:,}"
     )
-
-    print("-" * 70)
-
-    for recipe_id, name in sambar_rows:
-
-        print(
-            f"{recipe_id} -> {name}"
-        )
-
-    print("-" * 70)
-
-    print()
 
     print(
         "Database:"
@@ -1000,20 +1059,16 @@ def build_database():
     )
 
     print()
-    database_size_mb = (
-    SQLITE_FILE.stat().st_size
-    / (1024 * 1024)
+    print(
+        "Database size:",
+        f"{database_size_mb:.2f} MB"
     )
 
-    print(
-    "Database size:",
-    f"{database_size_mb:.2f} MB"
-)
-
     print()
-
     print("=" * 70)
-    print("       BUILD COMPLETE")
+    print(
+        "       BUILD COMPLETE"
+    )
     print("=" * 70)
 
 
@@ -1023,4 +1078,4 @@ def build_database():
 
 if __name__ == "__main__":
 
-    build_database()
+    create_database()

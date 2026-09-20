@@ -9,9 +9,12 @@ import pandas as pd
 import numpy as np
 import sqlite3
 import time
+import pyarrow as pa
+import pyarrow.dataset as ds
 
 from pathlib import Path
 from difflib import SequenceMatcher
+from functools import lru_cache
 
 from nlp.recipe_parser import extract_ingredient_info
 from nlp.substitution_engine import get_substitutes
@@ -41,13 +44,72 @@ SQLITE_FILE = DATA_DIR / "recipe_index.db"
 
 
 # ============================================================
+# PARQUET DATASET CACHE
+# ============================================================
+#
+# IMPORTANT:
+#
+# We DO NOT load the entire Parquet file.
+#
+# PyArrow Dataset is opened once and reused.
+# Individual recipes are retrieved using RecipeId filtering.
+#
+# ============================================================
+
+_RECIPE_DATASET = None
+
+
+def get_recipe_dataset():
+
+    global _RECIPE_DATASET
+
+    if _RECIPE_DATASET is None:
+
+        print()
+        print("=" * 60)
+        print("INITIALIZING RECIPE PARQUET DATASET")
+        print("=" * 60)
+
+        dataset_start = time.perf_counter()
+
+        if not DATA_FILE.exists():
+
+            raise FileNotFoundError(
+                f"Recipe dataset not found: {DATA_FILE}"
+            )
+
+        _RECIPE_DATASET = ds.dataset(
+            str(DATA_FILE),
+            format="parquet"
+        )
+
+        dataset_time = (
+            time.perf_counter()
+            - dataset_start
+        )
+
+        print(
+            f"Dataset initialized in {dataset_time:.3f} seconds"
+        )
+
+        print(
+            "Parquet schema loaded successfully."
+        )
+
+        print("=" * 60)
+
+    return _RECIPE_DATASET
+
+
+# ============================================================
 # SQLITE CONNECTION
 # ============================================================
 
 def get_sqlite_connection():
 
     connection = sqlite3.connect(
-        SQLITE_FILE
+        SQLITE_FILE,
+        timeout=10
     )
 
     connection.row_factory = sqlite3.Row
@@ -302,7 +364,7 @@ def analyze_recipe():
                 )
             )
 
-            substitutes = get_substitutes(
+            substitutes = get_cached_substitutes(
                 normalized
             )
 
@@ -345,6 +407,38 @@ def analyze_recipe():
 
 
 # ============================================================
+# CACHED SUBSTITUTION LOOKUP
+# ============================================================
+#
+# The substitution engine can be called many times while
+# building a recipe.
+#
+# Cache repeated ingredient requests.
+#
+# ============================================================
+
+@lru_cache(maxsize=2048)
+def get_cached_substitutes(
+    ingredient
+):
+
+    try:
+
+        return get_substitutes(
+            ingredient
+        )
+
+    except Exception as error:
+
+        print(
+            "Substitution lookup error:",
+            error
+        )
+
+        return []
+
+
+# ============================================================
 # INGREDIENT SUBSTITUTION
 # ============================================================
 
@@ -374,7 +468,7 @@ def substitute():
                 "message": "Please enter an ingredient."
             })
 
-        result = get_substitutes(
+        result = get_cached_substitutes(
             ingredient
         )
 
@@ -407,7 +501,7 @@ def substitute():
 
 
 # ============================================================
-# WHAT CAN I MAKE?
+# FIND RECIPES
 # ============================================================
 
 @app.route("/find-recipes", methods=["POST"])
@@ -490,106 +584,16 @@ def find_recipe_results():
         )
 
         # ====================================================
-        # OPTIMIZED RECIPE ID LOOKUP
-        #
-        # OLD:
-        #
-        # for every recipe:
-        #     SELECT recipe_id ...
-        #
-        # NEW:
-        #
-        # ONE SQLite query for all recipe names.
+        # PREPARE RESULTS
         # ====================================================
-
-        enrichment_start = time.perf_counter()
 
         enriched_results = []
 
-        if results:
+        for result in results:
 
-            recipe_names = [
-
-                str(
-                    result.get(
-                        "name",
-                        ""
-                    )
-                )
-
-                for result in results
-
-                if result.get(
-                    "name",
-                    ""
-                )
-            ]
-
-            recipe_id_map = {}
-
-            if recipe_names:
-
-                connection = get_sqlite_connection()
-
-                cursor = connection.cursor()
-
-                placeholders = ",".join(
-                    ["?"] * len(recipe_names)
-                )
-
-                query = f"""
-                    SELECT
-                        recipe_id,
-                        name
-                    FROM recipes
-                    WHERE name IN ({placeholders})
-                """
-
-                cursor.execute(
-                    query,
-                    recipe_names
-                )
-
-                rows = cursor.fetchall()
-
-                for row in rows:
-
-                    recipe_id_map[
-                        row["name"]
-                    ] = row["recipe_id"]
-
-                connection.close()
-
-            # ------------------------------------------------
-            # Add IDs without additional database queries
-            # ------------------------------------------------
-
-            for result in results:
-
-                result_copy = dict(
-                    result
-                )
-
-                recipe_name = result_copy.get(
-                    "name",
-                    ""
-                )
-
-                result_copy["recipe_id"] = (
-                    recipe_id_map.get(
-                        recipe_name
-                    )
-                )
-
-                enriched_results.append(
-                    result_copy
-                )
-
-        enrichment_time = (
-            time.perf_counter()
-            -
-            enrichment_start
-        )
+            enriched_results.append(
+                dict(result)
+            )
 
         total_time = (
             time.perf_counter()
@@ -598,7 +602,7 @@ def find_recipe_results():
         )
 
         # ====================================================
-        # PERFORMANCE DEBUG INFORMATION
+        # PERFORMANCE INFORMATION
         # ====================================================
 
         print()
@@ -622,15 +626,11 @@ def find_recipe_results():
         )
 
         print(
-            f"Search time:      {search_time:.3f} seconds"
+            f"Search time:   {search_time:.3f} seconds"
         )
 
         print(
-            f"ID lookup time:   {enrichment_time:.3f} seconds"
-        )
-
-        print(
-            f"Total backend:    {total_time:.3f} seconds"
+            f"Total backend: {total_time:.3f} seconds"
         )
 
         print("=" * 60)
@@ -699,133 +699,259 @@ def get_recipe_columns():
 
 
 # ============================================================
+# CONVERT RECIPE ID FOR ARROW
+# ============================================================
+
+def normalize_recipe_id(
+    recipe_id,
+    arrow_type
+):
+
+    try:
+
+        numeric_id = int(
+            float(recipe_id)
+        )
+
+    except (TypeError, ValueError):
+
+        return None
+
+    # --------------------------------------------------------
+    # Integer RecipeId
+    # --------------------------------------------------------
+
+    if pa.types.is_integer(
+        arrow_type
+    ):
+
+        return numeric_id
+
+    # --------------------------------------------------------
+    # Floating RecipeId
+    # --------------------------------------------------------
+
+    if pa.types.is_floating(
+        arrow_type
+    ):
+
+        return float(
+            numeric_id
+        )
+
+    # --------------------------------------------------------
+    # String RecipeId
+    # --------------------------------------------------------
+
+    return str(
+        numeric_id
+    )
+
+
+# ============================================================
+# LOAD RECIPE FROM PARQUET BY EXACT RECIPE ID
+# ============================================================
+#
+# THIS IS THE IMPORTANT FIX.
+#
+# We NEVER do:
+#
+#     pd.read_parquet(DATA_FILE)
+#
+# for a recipe request.
+#
+# Instead:
+#
+#     1. Open cached PyArrow Dataset.
+#     2. Detect RecipeId datatype.
+#     3. Apply exact RecipeId filter.
+#     4. Read only required columns.
+#     5. Convert only the matching row to pandas.
+#
+# There is NO full-Parquet fallback.
+#
+# ============================================================
+
+def load_recipe_from_parquet_by_id(
+    recipe_id
+):
+
+    start_time = time.perf_counter()
+
+    try:
+
+        dataset = get_recipe_dataset()
+
+        columns = get_recipe_columns()
+
+        # ----------------------------------------------------
+        # Check RecipeId datatype
+        # ----------------------------------------------------
+
+        recipe_id_field = dataset.schema.field(
+            "RecipeId"
+        )
+
+        arrow_recipe_id = normalize_recipe_id(
+            recipe_id,
+            recipe_id_field.type
+        )
+
+        if arrow_recipe_id is None:
+
+            print(
+                "Invalid RecipeId:",
+                recipe_id
+            )
+
+            return None
+
+        # ----------------------------------------------------
+        # Exact filter
+        # ----------------------------------------------------
+
+        filter_expression = (
+            ds.field("RecipeId")
+            ==
+            arrow_recipe_id
+        )
+
+        # ----------------------------------------------------
+        # Read only matching row
+        # ----------------------------------------------------
+
+        table = dataset.to_table(
+
+            columns=columns,
+
+            filter=filter_expression,
+
+            use_threads=True
+
+        )
+
+        # ----------------------------------------------------
+        # No matching recipe
+        # ----------------------------------------------------
+
+        if table.num_rows == 0:
+
+            elapsed = (
+                time.perf_counter()
+                -
+                start_time
+            )
+
+            print(
+                f"RecipeId {recipe_id} not found "
+                f"in Parquet ({elapsed:.3f}s)"
+            )
+
+            return None
+
+        # ----------------------------------------------------
+        # Convert only matching row
+        # ----------------------------------------------------
+
+        recipe_df = table.to_pandas()
+
+        if recipe_df.empty:
+
+            return None
+
+        recipe_row = recipe_df.iloc[0]
+
+        # ----------------------------------------------------
+        # Extra safety verification
+        # ----------------------------------------------------
+
+        actual_id = recipe_row[
+            "RecipeId"
+        ]
+
+        try:
+
+            actual_id = int(
+                float(actual_id)
+            )
+
+            expected_id = int(
+                float(recipe_id)
+            )
+
+        except (TypeError, ValueError):
+
+            print(
+                "RecipeId conversion failed."
+            )
+
+            return None
+
+        if actual_id != expected_id:
+
+            print()
+            print("RECIPE ID VERIFICATION FAILED")
+            print(
+                "Expected:",
+                expected_id
+            )
+            print(
+                "Actual:",
+                actual_id
+            )
+
+            return None
+
+        elapsed = (
+            time.perf_counter()
+            -
+            start_time
+        )
+
+        print(
+            f"Exact Parquet lookup: "
+            f"{elapsed:.3f} seconds"
+        )
+
+        return recipe_row
+
+    except Exception as error:
+
+        print()
+        print("=" * 60)
+        print("PARQUET LOOKUP ERROR")
+        print("=" * 60)
+        print(error)
+        print("=" * 60)
+
+        return None
+
+
+# ============================================================
 # LOAD RECIPE FROM PARQUET BY NAME
+# ============================================================
+#
+# Name is ONLY used to locate the RecipeId through SQLite.
+#
+# The actual recipe is ALWAYS loaded by RecipeId.
+#
 # ============================================================
 
 def load_recipe_from_parquet(
     recipe_name
 ):
 
-    columns = get_recipe_columns()
-
-    recipe_df = pd.read_parquet(
-
-        DATA_FILE,
-
-        columns=columns
-
-    )
-
-    target_name = normalize_dish_name(
+    matched_recipe = find_best_recipe(
         recipe_name
     )
 
-    normalized_names = (
-
-        recipe_df["Name"]
-
-        .astype(str)
-
-        .str.lower()
-
-        .str.strip()
-
-    )
-
-    # --------------------------------------------------------
-    # Exact normalized match
-    # --------------------------------------------------------
-
-    exact_mask = (
-
-        normalized_names
-
-        .apply(
-            normalize_dish_name
-        )
-
-        == target_name
-
-    )
-
-    matches = recipe_df[
-        exact_mask
-    ]
-
-    # --------------------------------------------------------
-    # Token matching fallback
-    # --------------------------------------------------------
-
-    if matches.empty:
-
-        query_tokens = get_dish_tokens(
-            recipe_name
-        )
-
-        if not query_tokens:
-
-            return None
-
-        normalized_series = (
-
-            normalized_names
-
-            .apply(
-                normalize_dish_name
-            )
-
-        )
-
-        mask = pd.Series(
-            True,
-            index=recipe_df.index
-        )
-
-        for token in query_tokens:
-
-            if token == "biryani":
-
-                token_mask = (
-
-                    normalized_series.str.contains(
-
-                        "biryani|biriyani",
-
-                        regex=True,
-
-                        na=False
-
-                    )
-
-                )
-
-            else:
-
-                token_mask = (
-
-                    normalized_series.str.contains(
-
-                        rf"\b{token}\b",
-
-                        regex=True,
-
-                        na=False
-
-                    )
-
-                )
-
-            mask = mask & token_mask
-
-        matches = recipe_df[
-            mask
-        ]
-
-    if matches.empty:
+    if matched_recipe is None:
 
         return None
 
-    return matches.iloc[0]
+    return load_recipe_from_parquet_by_id(
+        matched_recipe["recipe_id"]
+    )
 
 
 # ============================================================
@@ -844,6 +970,10 @@ def build_recipe_detail(
         "RecipeIngredientParts"
     ]
 
+    # --------------------------------------------------------
+    # Convert quantities
+    # --------------------------------------------------------
+
     try:
 
         quantities = list(
@@ -853,6 +983,10 @@ def build_recipe_detail(
     except Exception:
 
         quantities = []
+
+    # --------------------------------------------------------
+    # Convert ingredients
+    # --------------------------------------------------------
 
     try:
 
@@ -892,6 +1026,10 @@ def build_recipe_detail(
 
                 quantity = ""
 
+        # ----------------------------------------------------
+        # Parse ingredient
+        # ----------------------------------------------------
+
         parsed = extract_ingredient_info(
 
             f"{quantity} {ingredient}".strip()
@@ -899,7 +1037,9 @@ def build_recipe_detail(
         )
 
         normalized = ingredient
+
         parsed_quantity = quantity
+
         parsed_unit = ""
 
         if parsed:
@@ -921,9 +1061,17 @@ def build_recipe_detail(
                 ""
             )
 
-        substitutions = get_substitutes(
+        # ----------------------------------------------------
+        # Cached substitutions
+        # ----------------------------------------------------
+
+        substitutions = get_cached_substitutes(
             normalized
         )
+
+        # ----------------------------------------------------
+        # Display quantity
+        # ----------------------------------------------------
 
         if parsed_quantity and parsed_unit:
 
@@ -964,9 +1112,9 @@ def build_recipe_detail(
 
         })
 
-    # --------------------------------------------------------
+    # ========================================================
     # Instructions
-    # --------------------------------------------------------
+    # ========================================================
 
     instructions = recipe_row[
         "RecipeInstructions"
@@ -1002,9 +1150,9 @@ def build_recipe_detail(
                 instruction
             )
 
-    # --------------------------------------------------------
+    # ========================================================
     # Clean basic values
-    # --------------------------------------------------------
+    # ========================================================
 
     def clean_value(
         value,
@@ -1027,9 +1175,9 @@ def build_recipe_detail(
 
         return value
 
-    # --------------------------------------------------------
+    # ========================================================
     # Recipe object
-    # --------------------------------------------------------
+    # ========================================================
 
     recipe = {
 
@@ -1120,8 +1268,24 @@ def recipe_details():
             print("RECIPE DETAILS REQUEST")
             print("Recipe name:", recipe_name)
 
-            recipe_row = load_recipe_from_parquet(
+            matched_recipe = find_best_recipe(
                 recipe_name
+            )
+
+            if matched_recipe is None:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message": "Recipe not found."
+
+                })
+
+            recipe_row = (
+                load_recipe_from_parquet_by_id(
+                    matched_recipe["recipe_id"]
+                )
             )
 
             if recipe_row is None:
@@ -1192,11 +1356,11 @@ def recipe_details():
 
         if recipe_id is None and recipe_name:
 
-            recipe_row = load_recipe_from_parquet(
+            matched_recipe = find_best_recipe(
                 recipe_name
             )
 
-            if recipe_row is None:
+            if matched_recipe is None:
 
                 return jsonify({
 
@@ -1206,24 +1370,12 @@ def recipe_details():
 
                 })
 
-            recipe = build_recipe_detail(
-                recipe_row
-            )
-
-            return jsonify(
-                make_json_safe({
-
-                    "success": True,
-
-                    "recipe": recipe,
-
-                    "result": recipe
-
-                })
-            )
+            recipe_id = matched_recipe[
+                "recipe_id"
+            ]
 
         # ====================================================
-        # POST BY ID
+        # RECIPE ID REQUIRED
         # ====================================================
 
         if recipe_id is None:
@@ -1232,33 +1384,22 @@ def recipe_details():
 
                 "success": False,
 
-                "message": "Recipe ID or recipe name is required."
+                "message": (
+                    "Recipe ID or recipe name "
+                    "is required."
+                )
 
             })
 
-        columns = get_recipe_columns()
+        # ====================================================
+        # LOAD EXACT RECIPE
+        # ====================================================
 
-        recipe_df = pd.read_parquet(
-
-            DATA_FILE,
-
-            columns=columns
-
+        recipe_row = load_recipe_from_parquet_by_id(
+            recipe_id
         )
 
-        recipe_ids = pd.to_numeric(
-
-            recipe_df["RecipeId"],
-
-            errors="coerce"
-
-        )
-
-        recipe_df = recipe_df[
-            recipe_ids == float(recipe_id)
-        ]
-
-        if recipe_df.empty:
+        if recipe_row is None:
 
             return jsonify({
 
@@ -1268,10 +1409,8 @@ def recipe_details():
 
             })
 
-        row = recipe_df.iloc[0]
-
         recipe = build_recipe_detail(
-            row
+            recipe_row
         )
 
         return jsonify(
@@ -1309,7 +1448,9 @@ def recipe_details():
 # DISH NAME NORMALIZATION
 # ============================================================
 
-def normalize_dish_name(text):
+def normalize_dish_name(
+    text
+):
 
     text = str(
         text
@@ -1334,6 +1475,10 @@ def normalize_dish_name(text):
         "kebob": "kebab",
 
         "kebobs": "kebab",
+
+        "sambhar": "sambar",
+
+        "sambars": "sambar",
 
         "chilly": "chili",
 
@@ -1368,7 +1513,9 @@ def normalize_dish_name(text):
 # DISH SEARCH TOKENS
 # ============================================================
 
-def get_dish_tokens(text):
+def get_dish_tokens(
+    text
+):
 
     normalized = normalize_dish_name(
         text
@@ -1428,134 +1575,161 @@ def find_best_recipe(
         return None
 
     connection = get_sqlite_connection()
-    cursor = connection.cursor()
 
-    # ========================================================
-    # EXACT NAME
-    # ========================================================
+    try:
 
-    cursor.execute(
+        cursor = connection.cursor()
 
-        """
-        SELECT
-            recipe_id,
-            name,
-            category
-        FROM recipes
-        WHERE LOWER(name) = LOWER(?)
-        LIMIT 1
-        """,
+        # ====================================================
+        # EXACT NAME MATCH
+        # ====================================================
 
-        (
-            normalized_query,
+        cursor.execute(
+
+            """
+            SELECT
+                recipe_id,
+                name,
+                category
+            FROM recipes
+            WHERE LOWER(name) = LOWER(?)
+            LIMIT 1
+            """,
+
+            (
+                normalized_query,
+            )
+
         )
 
-    )
+        exact = cursor.fetchone()
 
-    exact = cursor.fetchone()
+        if exact:
 
-    if exact:
+            return exact
+
+        # ====================================================
+        # TOKEN SEARCH
+        # ====================================================
+
+        conditions = []
+
+        parameters = []
+
+        for token in query_tokens:
+
+            if token == "biryani":
+
+                conditions.append(
+
+                    """
+                    (
+                        LOWER(name) LIKE ?
+                        OR
+                        LOWER(name) LIKE ?
+                    )
+                    """
+
+                )
+
+                parameters.append(
+                    "%biryani%"
+                )
+
+                parameters.append(
+                    "%biriyani%"
+                )
+
+            elif token == "kebab":
+
+                conditions.append(
+
+                    """
+                    (
+                        LOWER(name) LIKE ?
+                        OR
+                        LOWER(name) LIKE ?
+                    )
+                    """
+
+                )
+
+                parameters.append(
+                    "%kebab%"
+                )
+
+                parameters.append(
+                    "%kabob%"
+                )
+
+            elif token == "sambar":
+
+                conditions.append(
+
+                    """
+                    (
+                        LOWER(name) LIKE ?
+                        OR
+                        LOWER(name) LIKE ?
+                    )
+                    """
+
+                )
+
+                parameters.append(
+                    "%sambar%"
+                )
+
+                parameters.append(
+                    "%sambhar%"
+                )
+
+            else:
+
+                conditions.append(
+                    "LOWER(name) LIKE ?"
+                )
+
+                parameters.append(
+                    f"%{token}%"
+                )
+
+        query = f"""
+
+            SELECT
+                recipe_id,
+                name,
+                category
+
+            FROM recipes
+
+            WHERE
+                {" AND ".join(conditions)}
+
+            ORDER BY
+                LENGTH(name) ASC
+
+            LIMIT 100
+
+        """
+
+        cursor.execute(
+            query,
+            parameters
+        )
+
+        candidates = cursor.fetchall()
+
+    finally:
 
         connection.close()
 
-        return exact
-
     # ========================================================
-    # SEARCH TOKENS
-    # ========================================================
-
-    conditions = []
-    parameters = []
-
-    for token in query_tokens:
-
-        if token == "biryani":
-
-            conditions.append(
-
-                """
-                (
-                    LOWER(name) LIKE ?
-                    OR
-                    LOWER(name) LIKE ?
-                )
-                """
-
-            )
-
-            parameters.append(
-                "%biryani%"
-            )
-
-            parameters.append(
-                "%biriyani%"
-            )
-
-        elif token == "kebab":
-
-            conditions.append(
-
-                """
-                (
-                    LOWER(name) LIKE ?
-                    OR
-                    LOWER(name) LIKE ?
-                )
-                """
-
-            )
-
-            parameters.append(
-                "%kebab%"
-            )
-
-            parameters.append(
-                "%kabob%"
-            )
-
-        else:
-
-            conditions.append(
-                "LOWER(name) LIKE ?"
-            )
-
-            parameters.append(
-                f"%{token}%"
-            )
-
-    query = f"""
-
-        SELECT
-            recipe_id,
-            name,
-            category
-
-        FROM recipes
-
-        WHERE
-            {" AND ".join(conditions)}
-
-        ORDER BY
-            LENGTH(name) ASC
-
-        LIMIT 100
-
-    """
-
-    cursor.execute(
-        query,
-        parameters
-    )
-
-    candidates = cursor.fetchall()
-
-    connection.close()
-
-    # ========================================================
-    # VALIDATE CANDIDATES
+    # VALIDATE + SCORE
     # ========================================================
 
     best = None
+
     best_score = -1
 
     for candidate in candidates:
@@ -1567,6 +1741,10 @@ def find_best_recipe(
         recipe_tokens = set(
             recipe_name.split()
         )
+
+        # ----------------------------------------------------
+        # Every requested token must exist
+        # ----------------------------------------------------
 
         all_words_present = True
 
@@ -1581,11 +1759,37 @@ def find_best_recipe(
                 ):
 
                     all_words_present = False
+
+                    break
+
+            elif token == "kebab":
+
+                if (
+                    "kebab" not in recipe_tokens
+                    and
+                    "kabob" not in recipe_tokens
+                ):
+
+                    all_words_present = False
+
+                    break
+
+            elif token == "sambar":
+
+                if (
+                    "sambar" not in recipe_tokens
+                    and
+                    "sambhar" not in recipe_tokens
+                ):
+
+                    all_words_present = False
+
                     break
 
             elif token not in recipe_tokens:
 
                 all_words_present = False
+
                 break
 
         if not all_words_present:
@@ -1598,17 +1802,34 @@ def find_best_recipe(
 
         score = 0
 
+        # ----------------------------------------------------
+        # Exact name
+        # ----------------------------------------------------
+
         if recipe_name == normalized_query:
 
             score += 1000
+
+        # ----------------------------------------------------
+        # Query appears inside recipe name
+        # ----------------------------------------------------
 
         if normalized_query in recipe_name:
 
             score += 300
 
-        score += len(
-            query_tokens
-        ) * 200
+        # ----------------------------------------------------
+        # Matching tokens
+        # ----------------------------------------------------
+
+        score += (
+            len(query_tokens)
+            * 200
+        )
+
+        # ----------------------------------------------------
+        # Similarity
+        # ----------------------------------------------------
 
         similarity = SequenceMatcher(
 
@@ -1620,7 +1841,14 @@ def find_best_recipe(
 
         ).ratio()
 
-        score += similarity * 100
+        score += (
+            similarity
+            * 100
+        )
+
+        # ----------------------------------------------------
+        # Penalize extra words
+        # ----------------------------------------------------
 
         extra_words = max(
 
@@ -1632,13 +1860,32 @@ def find_best_recipe(
 
         )
 
-        score -= extra_words * 5
+        score -= (
+            extra_words
+            * 5
+        )
 
         if score > best_score:
 
             best_score = score
 
             best = candidate
+
+    # ========================================================
+    # NO MATCH
+    # ========================================================
+
+    if best is None:
+
+        return None
+
+    # ========================================================
+    # WEAK MATCH PROTECTION
+    # ========================================================
+
+    if best_score < 300:
+
+        return None
 
     return best
 
@@ -1652,6 +1899,8 @@ def find_best_recipe(
     methods=["POST"]
 )
 def make_recipe():
+
+    start_time = time.perf_counter()
 
     try:
 
@@ -1696,18 +1945,33 @@ def make_recipe():
         print(dish_name)
 
         # ====================================================
-        # FIND USING SQLITE
+        # FIND RECIPE IN SQLITE
         # ====================================================
+
+        sqlite_start = time.perf_counter()
 
         matched_recipe = find_best_recipe(
             dish_name
         )
 
+        sqlite_time = (
+            time.perf_counter()
+            -
+            sqlite_start
+        )
+
         if matched_recipe is None:
 
             print(
-                "No matching recipe found."
+                "No suitable recipe found."
             )
+
+            print(
+                f"SQLite search: "
+                f"{sqlite_time:.3f} seconds"
+            )
+
+            print("=" * 60)
 
             return jsonify({
 
@@ -1722,26 +1986,56 @@ def make_recipe():
 
             })
 
+        recipe_id = matched_recipe[
+            "recipe_id"
+        ]
+
         matched_name = matched_recipe[
             "name"
         ]
 
+        print()
         print("SQLite match:")
         print(matched_name)
 
+        print(
+            "Recipe ID:",
+            recipe_id
+        )
+
         # ====================================================
-        # LOAD COMPLETE RECIPE
+        # LOAD EXACT RECIPE BY ID
         # ====================================================
 
-        recipe_row = load_recipe_from_parquet(
-            matched_name
+        parquet_start = time.perf_counter()
+
+        recipe_row = load_recipe_from_parquet_by_id(
+            recipe_id
+        )
+
+        parquet_time = (
+            time.perf_counter()
+            -
+            parquet_start
         )
 
         if recipe_row is None:
 
             print(
-                "Parquet recipe could not be found."
+                "Exact RecipeId was not found in Parquet."
             )
+
+            print(
+                f"SQLite search: "
+                f"{sqlite_time:.3f} seconds"
+            )
+
+            print(
+                f"Parquet load: "
+                f"{parquet_time:.3f} seconds"
+            )
+
+            print("=" * 60)
 
             return jsonify({
 
@@ -1750,31 +2044,142 @@ def make_recipe():
                 "message": (
 
                     "The recipe was found in the "
-                    "search index, but the complete "
-                    "recipe could not be loaded."
+                    "search index, but its complete "
+                    "recipe data could not be loaded."
 
                 )
 
             })
 
+        print()
         print("Parquet match:")
-        print(recipe_row["Name"])
+        print(
+            recipe_row["Name"]
+        )
 
         # ====================================================
-        # BUILD COMPLETE RECIPE
+        # SAFETY CHECK
         # ====================================================
+
+        parquet_recipe_id = recipe_row[
+            "RecipeId"
+        ]
+
+        try:
+
+            parquet_recipe_id = int(
+                float(
+                    parquet_recipe_id
+                )
+            )
+
+            expected_recipe_id = int(
+                float(
+                    recipe_id
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            print(
+                "Recipe ID conversion failed."
+            )
+
+            return jsonify({
+
+                "success": False,
+
+                "message": (
+                    "Recipe verification failed."
+                )
+
+            }), 500
+
+        if parquet_recipe_id != expected_recipe_id:
+
+            print(
+                "RECIPE ID MISMATCH!"
+            )
+
+            print(
+                "SQLite ID:",
+                expected_recipe_id
+            )
+
+            print(
+                "Parquet ID:",
+                parquet_recipe_id
+            )
+
+            print("=" * 60)
+
+            return jsonify({
+
+                "success": False,
+
+                "message": (
+
+                    "Recipe verification failed. "
+                    "The recipe data did not match "
+                    "the search result."
+
+                )
+
+            }), 500
+
+        # ====================================================
+        # BUILD RECIPE
+        # ====================================================
+
+        build_start = time.perf_counter()
 
         recipe = build_recipe_detail(
             recipe_row
         )
 
-        result = {
+        build_time = (
+            time.perf_counter()
+            -
+            build_start
+        )
 
-            "success": True,
+        total_time = (
+            time.perf_counter()
+            -
+            start_time
+        )
 
-            "recipe": recipe
+        # ====================================================
+        # PERFORMANCE
+        # ====================================================
 
-        }
+        print()
+        print("-" * 60)
+
+        print(
+            f"SQLite search:   "
+            f"{sqlite_time:.3f} seconds"
+        )
+
+        print(
+            f"Parquet lookup:  "
+            f"{parquet_time:.3f} seconds"
+        )
+
+        print(
+            f"Recipe building: "
+            f"{build_time:.3f} seconds"
+        )
+
+        print(
+            f"TOTAL:           "
+            f"{total_time:.3f} seconds"
+        )
+
+        print("-" * 60)
 
         print(
             "Recipe successfully loaded."
@@ -1782,10 +2187,18 @@ def make_recipe():
 
         print("=" * 60)
 
+        # ====================================================
+        # RESPONSE
+        # ====================================================
+
         return jsonify(
-            make_json_safe(
-                result
-            )
+            make_json_safe({
+
+                "success": True,
+
+                "recipe": recipe
+
+            })
         )
 
     except Exception as error:
