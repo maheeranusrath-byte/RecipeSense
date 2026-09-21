@@ -9,87 +9,96 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
 
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(
+    exist_ok=True
+)
 
 
 # ============================================================
-# HUGGING FACE DATA FILES
+# HUGGING FACE DATA
 # ============================================================
 
-FILES = {
+SQLITE_URL = (
+    "https://huggingface.co/datasets/"
+    "maheeranusrath/recipesense-data/"
+    "resolve/main/recipe_index.db?download=true"
+)
 
-    "recipe_index.db": (
-        "https://huggingface.co/datasets/"
-        "maheeranusrath/recipesense-data/"
-        "resolve/main/recipe_index.db?download=true"
-    ),
-
-    "recipes_cleaned.parquet": (
-        "https://huggingface.co/datasets/"
-        "maheeranusrath/recipesense-data/"
-        "resolve/main/recipes_cleaned.parquet?download=true"
-    )
-}
+SQLITE_FILE = DATA_DIR / "recipe_index.db"
 
 
 # ============================================================
-# DOWNLOAD FUNCTION
+# DOWNLOAD DATABASE
 # ============================================================
 
-def download_file(filename, url):
+def download_database():
 
-    destination = DATA_DIR / filename
+    if SQLITE_FILE.exists():
 
-    # --------------------------------------------------------
-    # Skip existing files
-    # --------------------------------------------------------
-
-    if destination.exists():
-
-        print(
-            f"{filename} already exists. "
-            "Skipping download."
-        )
+        print("=" * 60)
+        print("Recipe database already exists.")
+        print(SQLITE_FILE)
+        print("=" * 60)
 
         return
 
-    print("=" * 60)
-
-    print(
-        f"Downloading: {filename}"
-    )
 
     print("=" * 60)
+    print("       RecipeSense Database Downloader")
+    print("=" * 60)
+
+    print()
+    print("Downloading SQLite recipe database...")
+    print()
+    print("Source:")
+    print(SQLITE_URL)
+    print()
 
     try:
 
         urllib.request.urlretrieve(
-            url,
-            destination
+            SQLITE_URL,
+            SQLITE_FILE
         )
-
-        print(
-            f"Downloaded successfully:"
-        )
-
-        print(destination)
 
         print()
+        print("Database downloaded successfully.")
+        print()
+        print("Location:")
+        print(SQLITE_FILE)
+
+        size_mb = (
+            SQLITE_FILE.stat().st_size
+            / (1024 * 1024)
+        )
+
+        print()
+        print(
+            f"Database size: {size_mb:.2f} MB"
+        )
+
+        print()
+        print("=" * 60)
+        print("       Download Complete")
+        print("=" * 60)
+
 
     except Exception as error:
 
-        print(
-            f"\nFailed to download {filename}"
-        )
+        print()
+        print("=" * 60)
+        print("DATABASE DOWNLOAD FAILED")
+        print("=" * 60)
 
-        print(
-            f"Error: {error}"
-        )
+        print()
+        print("Error:")
+        print(error)
 
-        # Remove incomplete file
-        if destination.exists():
+        print()
 
-            destination.unlink()
+        if SQLITE_FILE.exists():
+
+            SQLITE_FILE.unlink()
 
         raise
 
@@ -98,38 +107,6 @@ def download_file(filename, url):
 # MAIN
 # ============================================================
 
-def main():
-
-    print("=" * 60)
-
-    print(
-        "       RecipeSense Data Downloader"
-    )
-
-    print("=" * 60)
-
-    print()
-
-    for filename, url in FILES.items():
-
-        download_file(
-            filename,
-            url
-        )
-
-    print("=" * 60)
-
-    print(
-        "All required data files are ready."
-    )
-
-    print("=" * 60)
-
-
-# ============================================================
-# RUN
-# ============================================================
-
 if __name__ == "__main__":
 
-    main()
+    download_database()
