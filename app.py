@@ -5,12 +5,12 @@
 
 from flask import Flask, render_template, request, jsonify
 
-import pandas as pd
-import numpy as np
+import json
+import pickle
 import sqlite3
 import time
-import pyarrow as pa
-import pyarrow.dataset as ds
+import zlib
+import math
 
 from pathlib import Path
 from difflib import SequenceMatcher
@@ -39,66 +39,7 @@ app = Flask(__name__)
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
 
-DATA_FILE = DATA_DIR / "recipes_cleaned.parquet"
 SQLITE_FILE = DATA_DIR / "recipe_index.db"
-
-
-# ============================================================
-# PARQUET DATASET CACHE
-# ============================================================
-#
-# IMPORTANT:
-#
-# We DO NOT load the entire Parquet file.
-#
-# PyArrow Dataset is opened once and reused.
-# Individual recipes are retrieved using RecipeId filtering.
-#
-# ============================================================
-
-_RECIPE_DATASET = None
-
-
-def get_recipe_dataset():
-
-    global _RECIPE_DATASET
-
-    if _RECIPE_DATASET is None:
-
-        print()
-        print("=" * 60)
-        print("INITIALIZING RECIPE PARQUET DATASET")
-        print("=" * 60)
-
-        dataset_start = time.perf_counter()
-
-        if not DATA_FILE.exists():
-
-            raise FileNotFoundError(
-                f"Recipe dataset not found: {DATA_FILE}"
-            )
-
-        _RECIPE_DATASET = ds.dataset(
-            str(DATA_FILE),
-            format="parquet"
-        )
-
-        dataset_time = (
-            time.perf_counter()
-            - dataset_start
-        )
-
-        print(
-            f"Dataset initialized in {dataset_time:.3f} seconds"
-        )
-
-        print(
-            "Parquet schema loaded successfully."
-        )
-
-        print("=" * 60)
-
-    return _RECIPE_DATASET
 
 
 # ============================================================
@@ -107,9 +48,15 @@ def get_recipe_dataset():
 
 def get_sqlite_connection():
 
+    if not SQLITE_FILE.exists():
+
+        raise FileNotFoundError(
+            f"Recipe database not found: {SQLITE_FILE}"
+        )
+
     connection = sqlite3.connect(
         SQLITE_FILE,
-        timeout=10
+        timeout=30
     )
 
     connection.row_factory = sqlite3.Row
@@ -126,7 +73,7 @@ def make_json_safe(value):
     if isinstance(value, dict):
 
         return {
-            key: make_json_safe(val)
+            str(key): make_json_safe(val)
             for key, val in value.items()
         }
 
@@ -154,38 +101,31 @@ def make_json_safe(value):
             )
         ]
 
-    if isinstance(value, np.ndarray):
+    if isinstance(value, bytes):
 
-        return [
-            make_json_safe(item)
-            for item in value.tolist()
-        ]
-
-    if isinstance(value, np.integer):
-
-        return int(value)
-
-    if isinstance(value, np.floating):
-
-        if np.isnan(value):
-
-            return None
-
-        return float(value)
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return str(value)
 
     if value is None:
 
         return None
 
-    try:
+    if isinstance(value, bool):
 
-        if pd.isna(value):
+        return value
 
+    if isinstance(value, int):
+
+        return value
+
+    if isinstance(value, float):
+
+        if math.isnan(value) or math.isinf(value):
             return None
 
-    except Exception:
-
-        pass
+        return value
 
     return value
 
@@ -235,10 +175,38 @@ def make_recipe_page():
 
 
 # ============================================================
+# CACHED SUBSTITUTION LOOKUP
+# ============================================================
+
+@lru_cache(maxsize=2048)
+def get_cached_substitutes(
+    ingredient
+):
+
+    try:
+
+        return get_substitutes(
+            ingredient
+        )
+
+    except Exception as error:
+
+        print(
+            "Substitution lookup error:",
+            error
+        )
+
+        return []
+
+
+# ============================================================
 # ANALYZE RECIPE
 # ============================================================
 
-@app.route("/analyze", methods=["POST"])
+@app.route(
+    "/analyze",
+    methods=["POST"]
+)
 def analyze_recipe():
 
     try:
@@ -385,64 +353,39 @@ def analyze_recipe():
 
                 "actions": cooking_actions,
 
-                "substitutions": substitution_results
+                "substitutions":
+                    substitution_results
 
             })
         )
 
     except Exception as error:
 
-        print("\nANALYZE ERROR:")
+        print()
+        print("ANALYZE ERROR:")
         print(error)
 
         return jsonify({
 
             "success": False,
 
-            "message": "Unable to analyze recipe.",
+            "message":
+                "Unable to analyze recipe.",
 
-            "error": str(error)
+            "error":
+                str(error)
 
         }), 500
-
-
-# ============================================================
-# CACHED SUBSTITUTION LOOKUP
-# ============================================================
-#
-# The substitution engine can be called many times while
-# building a recipe.
-#
-# Cache repeated ingredient requests.
-#
-# ============================================================
-
-@lru_cache(maxsize=2048)
-def get_cached_substitutes(
-    ingredient
-):
-
-    try:
-
-        return get_substitutes(
-            ingredient
-        )
-
-    except Exception as error:
-
-        print(
-            "Substitution lookup error:",
-            error
-        )
-
-        return []
 
 
 # ============================================================
 # INGREDIENT SUBSTITUTION
 # ============================================================
 
-@app.route("/substitute", methods=["POST"])
+@app.route(
+    "/substitute",
+    methods=["POST"]
+)
 def substitute():
 
     try:
@@ -452,8 +395,12 @@ def substitute():
         if not data:
 
             return jsonify({
+
                 "success": False,
-                "message": "No ingredient data received."
+
+                "message":
+                    "No ingredient data received."
+
             })
 
         ingredient = data.get(
@@ -464,8 +411,12 @@ def substitute():
         if not ingredient:
 
             return jsonify({
+
                 "success": False,
-                "message": "Please enter an ingredient."
+
+                "message":
+                    "Please enter an ingredient."
+
             })
 
         result = get_cached_substitutes(
@@ -486,25 +437,31 @@ def substitute():
 
     except Exception as error:
 
-        print("\nSUBSTITUTION ERROR:")
+        print()
+        print("SUBSTITUTION ERROR:")
         print(error)
 
         return jsonify({
 
             "success": False,
 
-            "message": "Unable to find substitutions.",
+            "message":
+                "Unable to find substitutions.",
 
-            "error": str(error)
+            "error":
+                str(error)
 
         }), 500
 
 
 # ============================================================
-# FIND RECIPES
+# WHAT CAN I MAKE?
 # ============================================================
 
-@app.route("/find-recipes", methods=["POST"])
+@app.route(
+    "/find-recipes",
+    methods=["POST"]
+)
 def find_recipe_results():
 
     start_time = time.perf_counter()
@@ -519,7 +476,8 @@ def find_recipe_results():
 
                 "success": False,
 
-                "message": "No recipe search data received."
+                "message":
+                    "No recipe search data received."
 
             })
 
@@ -539,16 +497,15 @@ def find_recipe_results():
 
                 "success": False,
 
-                "message": "Please enter ingredients."
+                "message":
+                    "Please enter ingredients."
 
             })
 
-        # ====================================================
-        # NORMALIZE INGREDIENTS
-        # ====================================================
-
-        user_ingredients = normalize_user_ingredients(
-            ingredients_text
+        user_ingredients = (
+            normalize_user_ingredients(
+                ingredients_text
+            )
         )
 
         if not user_ingredients:
@@ -557,13 +514,14 @@ def find_recipe_results():
 
                 "success": False,
 
-                "message": "No valid ingredients found."
+                "message":
+                    "No valid ingredients found."
 
             })
 
-        # ====================================================
-        # SEARCH RECIPES
-        # ====================================================
+        # ----------------------------------------------------
+        # Search
+        # ----------------------------------------------------
 
         search_start = time.perf_counter()
 
@@ -583,10 +541,6 @@ def find_recipe_results():
             search_start
         )
 
-        # ====================================================
-        # PREPARE RESULTS
-        # ====================================================
-
         enriched_results = []
 
         for result in results:
@@ -600,10 +554,6 @@ def find_recipe_results():
             -
             start_time
         )
-
-        # ====================================================
-        # PERFORMANCE INFORMATION
-        # ====================================================
 
         print()
         print("=" * 60)
@@ -626,28 +576,29 @@ def find_recipe_results():
         )
 
         print(
-            f"Search time:   {search_time:.3f} seconds"
+            f"Search time:   "
+            f"{search_time:.3f} seconds"
         )
 
         print(
-            f"Total backend: {total_time:.3f} seconds"
+            f"Total backend: "
+            f"{total_time:.3f} seconds"
         )
 
         print("=" * 60)
-
-        # ====================================================
-        # RESPONSE
-        # ====================================================
 
         response_data = {
 
             "success": True,
 
-            "ingredients": user_ingredients,
+            "ingredients":
+                user_ingredients,
 
-            "category": category,
+            "category":
+                category,
 
-            "results": enriched_results
+            "results":
+                enriched_results
 
         }
 
@@ -659,787 +610,19 @@ def find_recipe_results():
 
     except Exception as error:
 
-        print("\nFIND RECIPES ERROR:")
+        print()
+        print("FIND RECIPES ERROR:")
         print(error)
 
         return jsonify({
 
             "success": False,
 
-            "message": "Unable to find recipes.",
-
-            "error": str(error)
-
-        }), 500
-
-
-# ============================================================
-# RECIPE DETAIL HELPERS
-# ============================================================
-
-def get_recipe_columns():
-
-    return [
-
-        "RecipeId",
-        "Name",
-        "Description",
-        "RecipeCategory",
-        "Keywords",
-        "CookTime",
-        "PrepTime",
-        "TotalTime",
-        "RecipeIngredientQuantities",
-        "RecipeIngredientParts",
-        "RecipeInstructions",
-        "RecipeServings",
-        "Calories"
-
-    ]
-
-
-# ============================================================
-# CONVERT RECIPE ID FOR ARROW
-# ============================================================
-
-def normalize_recipe_id(
-    recipe_id,
-    arrow_type
-):
-
-    try:
-
-        numeric_id = int(
-            float(recipe_id)
-        )
-
-    except (TypeError, ValueError):
-
-        return None
-
-    # --------------------------------------------------------
-    # Integer RecipeId
-    # --------------------------------------------------------
-
-    if pa.types.is_integer(
-        arrow_type
-    ):
-
-        return numeric_id
-
-    # --------------------------------------------------------
-    # Floating RecipeId
-    # --------------------------------------------------------
-
-    if pa.types.is_floating(
-        arrow_type
-    ):
-
-        return float(
-            numeric_id
-        )
-
-    # --------------------------------------------------------
-    # String RecipeId
-    # --------------------------------------------------------
-
-    return str(
-        numeric_id
-    )
-
-
-# ============================================================
-# LOAD RECIPE FROM PARQUET BY EXACT RECIPE ID
-# ============================================================
-#
-# THIS IS THE IMPORTANT FIX.
-#
-# We NEVER do:
-#
-#     pd.read_parquet(DATA_FILE)
-#
-# for a recipe request.
-#
-# Instead:
-#
-#     1. Open cached PyArrow Dataset.
-#     2. Detect RecipeId datatype.
-#     3. Apply exact RecipeId filter.
-#     4. Read only required columns.
-#     5. Convert only the matching row to pandas.
-#
-# There is NO full-Parquet fallback.
-#
-# ============================================================
-
-def load_recipe_from_parquet_by_id(
-    recipe_id
-):
-
-    start_time = time.perf_counter()
-
-    try:
-
-        dataset = get_recipe_dataset()
-
-        columns = get_recipe_columns()
-
-        # ----------------------------------------------------
-        # Check RecipeId datatype
-        # ----------------------------------------------------
-
-        recipe_id_field = dataset.schema.field(
-            "RecipeId"
-        )
-
-        arrow_recipe_id = normalize_recipe_id(
-            recipe_id,
-            recipe_id_field.type
-        )
-
-        if arrow_recipe_id is None:
-
-            print(
-                "Invalid RecipeId:",
-                recipe_id
-            )
-
-            return None
-
-        # ----------------------------------------------------
-        # Exact filter
-        # ----------------------------------------------------
-
-        filter_expression = (
-            ds.field("RecipeId")
-            ==
-            arrow_recipe_id
-        )
-
-        # ----------------------------------------------------
-        # Read only matching row
-        # ----------------------------------------------------
-
-        table = dataset.to_table(
-
-            columns=columns,
-
-            filter=filter_expression,
-
-            use_threads=True
-
-        )
-
-        # ----------------------------------------------------
-        # No matching recipe
-        # ----------------------------------------------------
-
-        if table.num_rows == 0:
-
-            elapsed = (
-                time.perf_counter()
-                -
-                start_time
-            )
-
-            print(
-                f"RecipeId {recipe_id} not found "
-                f"in Parquet ({elapsed:.3f}s)"
-            )
-
-            return None
-
-        # ----------------------------------------------------
-        # Convert only matching row
-        # ----------------------------------------------------
-
-        recipe_df = table.to_pandas()
-
-        if recipe_df.empty:
-
-            return None
-
-        recipe_row = recipe_df.iloc[0]
-
-        # ----------------------------------------------------
-        # Extra safety verification
-        # ----------------------------------------------------
-
-        actual_id = recipe_row[
-            "RecipeId"
-        ]
-
-        try:
-
-            actual_id = int(
-                float(actual_id)
-            )
-
-            expected_id = int(
-                float(recipe_id)
-            )
-
-        except (TypeError, ValueError):
-
-            print(
-                "RecipeId conversion failed."
-            )
-
-            return None
-
-        if actual_id != expected_id:
-
-            print()
-            print("RECIPE ID VERIFICATION FAILED")
-            print(
-                "Expected:",
-                expected_id
-            )
-            print(
-                "Actual:",
-                actual_id
-            )
-
-            return None
-
-        elapsed = (
-            time.perf_counter()
-            -
-            start_time
-        )
-
-        print(
-            f"Exact Parquet lookup: "
-            f"{elapsed:.3f} seconds"
-        )
-
-        return recipe_row
-
-    except Exception as error:
-
-        print()
-        print("=" * 60)
-        print("PARQUET LOOKUP ERROR")
-        print("=" * 60)
-        print(error)
-        print("=" * 60)
-
-        return None
-
-
-# ============================================================
-# LOAD RECIPE FROM PARQUET BY NAME
-# ============================================================
-#
-# Name is ONLY used to locate the RecipeId through SQLite.
-#
-# The actual recipe is ALWAYS loaded by RecipeId.
-#
-# ============================================================
-
-def load_recipe_from_parquet(
-    recipe_name
-):
-
-    matched_recipe = find_best_recipe(
-        recipe_name
-    )
-
-    if matched_recipe is None:
-
-        return None
-
-    return load_recipe_from_parquet_by_id(
-        matched_recipe["recipe_id"]
-    )
-
-
-# ============================================================
-# BUILD RECIPE DETAIL OBJECT
-# ============================================================
-
-def build_recipe_detail(
-    recipe_row
-):
-
-    quantities = recipe_row[
-        "RecipeIngredientQuantities"
-    ]
-
-    ingredients = recipe_row[
-        "RecipeIngredientParts"
-    ]
-
-    # --------------------------------------------------------
-    # Convert quantities
-    # --------------------------------------------------------
-
-    try:
-
-        quantities = list(
-            quantities
-        )
-
-    except Exception:
-
-        quantities = []
-
-    # --------------------------------------------------------
-    # Convert ingredients
-    # --------------------------------------------------------
-
-    try:
-
-        ingredients = list(
-            ingredients
-        )
-
-    except Exception:
-
-        ingredients = []
-
-    ingredient_list = []
-
-    for index, ingredient in enumerate(
-        ingredients
-    ):
-
-        ingredient = str(
-            ingredient
-        ).strip()
-
-        if not ingredient:
-
-            continue
-
-        quantity = ""
-
-        if index < len(
-            quantities
-        ):
-
-            quantity = str(
-                quantities[index]
-            ).strip()
-
-            if quantity.lower() == "nan":
-
-                quantity = ""
-
-        # ----------------------------------------------------
-        # Parse ingredient
-        # ----------------------------------------------------
-
-        parsed = extract_ingredient_info(
-
-            f"{quantity} {ingredient}".strip()
-
-        )
-
-        normalized = ingredient
-
-        parsed_quantity = quantity
-
-        parsed_unit = ""
-
-        if parsed:
-
-            parsed_item = parsed[0]
-
-            normalized = parsed_item.get(
-                "normalized_ingredient",
-                ingredient
-            )
-
-            parsed_quantity = parsed_item.get(
-                "quantity",
-                quantity
-            )
-
-            parsed_unit = parsed_item.get(
-                "unit",
-                ""
-            )
-
-        # ----------------------------------------------------
-        # Cached substitutions
-        # ----------------------------------------------------
-
-        substitutions = get_cached_substitutes(
-            normalized
-        )
-
-        # ----------------------------------------------------
-        # Display quantity
-        # ----------------------------------------------------
-
-        if parsed_quantity and parsed_unit:
-
-            display = (
-
-                f"{parsed_quantity} "
-                f"{parsed_unit} "
-                f"{ingredient}"
-
-            )
-
-        elif parsed_quantity:
-
-            display = (
-
-                f"{parsed_quantity} "
-                f"{ingredient}"
-
-            )
-
-        else:
-
-            display = ingredient
-
-        ingredient_list.append({
-
-            "ingredient": ingredient,
-
-            "display": display,
-
-            "normalized_ingredient": normalized,
-
-            "quantity": parsed_quantity,
-
-            "unit": parsed_unit,
-
-            "substitutions": substitutions
-
-        })
-
-    # ========================================================
-    # Instructions
-    # ========================================================
-
-    instructions = recipe_row[
-        "RecipeInstructions"
-    ]
-
-    if instructions is None:
-
-        instructions = []
-
-    try:
-
-        instructions = list(
-            instructions
-        )
-
-    except Exception:
-
-        instructions = [
-            str(instructions)
-        ]
-
-    cleaned_instructions = []
-
-    for instruction in instructions:
-
-        instruction = str(
-            instruction
-        ).strip()
-
-        if instruction:
-
-            cleaned_instructions.append(
-                instruction
-            )
-
-    # ========================================================
-    # Clean basic values
-    # ========================================================
-
-    def clean_value(
-        value,
-        default=""
-    ):
-
-        if value is None:
-
-            return default
-
-        try:
-
-            if pd.isna(value):
-
-                return default
-
-        except Exception:
-
-            pass
-
-        return value
-
-    # ========================================================
-    # Recipe object
-    # ========================================================
-
-    recipe = {
-
-        "id": clean_value(
-            recipe_row["RecipeId"]
-        ),
-
-        "name": clean_value(
-            recipe_row["Name"]
-        ),
-
-        "category": clean_value(
-            recipe_row["RecipeCategory"]
-        ),
-
-        "description": clean_value(
-            recipe_row["Description"]
-        ),
-
-        "keywords": clean_value(
-            recipe_row["Keywords"]
-        ),
-
-        "prep_time": clean_value(
-            recipe_row["PrepTime"]
-        ),
-
-        "cook_time": clean_value(
-            recipe_row["CookTime"]
-        ),
-
-        "total_time": clean_value(
-            recipe_row["TotalTime"]
-        ),
-
-        "servings": clean_value(
-            recipe_row["RecipeServings"]
-        ),
-
-        "calories": clean_value(
-            recipe_row["Calories"]
-        ),
-
-        "ingredients": ingredient_list,
-
-        "instructions": cleaned_instructions
-
-    }
-
-    return recipe
-
-
-# ============================================================
-# RECIPE DETAILS
-# ============================================================
-
-@app.route(
-    "/recipe-details",
-    methods=["GET", "POST"]
-)
-def recipe_details():
-
-    try:
-
-        # ====================================================
-        # GET
-        # ====================================================
-
-        if request.method == "GET":
-
-            recipe_name = request.args.get(
-                "name",
-                ""
-            ).strip()
-
-            if not recipe_name:
-
-                return jsonify({
-
-                    "success": False,
-
-                    "message": "Recipe name is required."
-
-                })
-
-            print()
-            print("=" * 60)
-            print("RECIPE DETAILS REQUEST")
-            print("Recipe name:", recipe_name)
-
-            matched_recipe = find_best_recipe(
-                recipe_name
-            )
-
-            if matched_recipe is None:
-
-                return jsonify({
-
-                    "success": False,
-
-                    "message": "Recipe not found."
-
-                })
-
-            recipe_row = (
-                load_recipe_from_parquet_by_id(
-                    matched_recipe["recipe_id"]
-                )
-            )
-
-            if recipe_row is None:
-
-                return jsonify({
-
-                    "success": False,
-
-                    "message": "Recipe not found."
-
-                })
-
-            recipe = build_recipe_detail(
-                recipe_row
-            )
-
-            response = {
-
-                "success": True,
-
-                "recipe": recipe,
-
-                "result": recipe
-
-            }
-
-            print(
-                "Recipe loaded:",
-                recipe["name"]
-            )
-
-            print("=" * 60)
-
-            return jsonify(
-                make_json_safe(
-                    response
-                )
-            )
-
-        # ====================================================
-        # POST
-        # ====================================================
-
-        data = request.get_json()
-
-        if not data:
-
-            return jsonify({
-
-                "success": False,
-
-                "message": "No recipe data received."
-
-            })
-
-        recipe_id = data.get(
-            "recipe_id"
-        )
-
-        recipe_name = data.get(
-            "name",
-            ""
-        ).strip()
-
-        # ====================================================
-        # POST BY NAME
-        # ====================================================
-
-        if recipe_id is None and recipe_name:
-
-            matched_recipe = find_best_recipe(
-                recipe_name
-            )
-
-            if matched_recipe is None:
-
-                return jsonify({
-
-                    "success": False,
-
-                    "message": "Recipe not found."
-
-                })
-
-            recipe_id = matched_recipe[
-                "recipe_id"
-            ]
-
-        # ====================================================
-        # RECIPE ID REQUIRED
-        # ====================================================
-
-        if recipe_id is None:
-
-            return jsonify({
-
-                "success": False,
-
-                "message": (
-                    "Recipe ID or recipe name "
-                    "is required."
-                )
-
-            })
-
-        # ====================================================
-        # LOAD EXACT RECIPE
-        # ====================================================
-
-        recipe_row = load_recipe_from_parquet_by_id(
-            recipe_id
-        )
-
-        if recipe_row is None:
-
-            return jsonify({
-
-                "success": False,
-
-                "message": "Recipe not found."
-
-            })
-
-        recipe = build_recipe_detail(
-            recipe_row
-        )
-
-        return jsonify(
-            make_json_safe({
-
-                "success": True,
-
-                "recipe": recipe,
-
-                "result": recipe
-
-            })
-        )
-
-    except Exception as error:
-
-        print()
-        print("=" * 60)
-        print("RECIPE DETAILS ERROR:")
-        print(error)
-        print("=" * 60)
-
-        return jsonify({
-
-            "success": False,
-
-            "message": "Unable to load recipe details.",
-
-            "error": str(error)
+            "message":
+                "Unable to find recipes.",
+
+            "error":
+                str(error)
 
         }), 500
 
@@ -1459,29 +642,21 @@ def normalize_dish_name(
     replacements = {
 
         "biriyani": "biryani",
-
         "biryanis": "biryani",
-
         "briyani": "biryani",
-
         "briani": "biryani",
 
         "panneer": "paneer",
 
         "kabob": "kebab",
-
         "kababs": "kebab",
-
         "kebob": "kebab",
-
         "kebobs": "kebab",
 
         "sambhar": "sambar",
-
         "sambars": "sambar",
 
         "chilly": "chili",
-
         "chillies": "chili"
 
     }
@@ -1562,12 +737,16 @@ def find_best_recipe(
     dish_name
 ):
 
-    normalized_query = normalize_dish_name(
-        dish_name
+    normalized_query = (
+        normalize_dish_name(
+            dish_name
+        )
     )
 
-    query_tokens = get_dish_tokens(
-        normalized_query
+    query_tokens = (
+        get_dish_tokens(
+            normalized_query
+        )
     )
 
     if not query_tokens:
@@ -1580,9 +759,9 @@ def find_best_recipe(
 
         cursor = connection.cursor()
 
-        # ====================================================
-        # EXACT NAME MATCH
-        # ====================================================
+        # ----------------------------------------------------
+        # Exact match
+        # ----------------------------------------------------
 
         cursor.execute(
 
@@ -1608,9 +787,9 @@ def find_best_recipe(
 
             return exact
 
-        # ====================================================
-        # TOKEN SEARCH
-        # ====================================================
+        # ----------------------------------------------------
+        # Token search
+        # ----------------------------------------------------
 
         conditions = []
 
@@ -1724,9 +903,9 @@ def find_best_recipe(
 
         connection.close()
 
-    # ========================================================
-    # VALIDATE + SCORE
-    # ========================================================
+    # --------------------------------------------------------
+    # Score candidates
+    # --------------------------------------------------------
 
     best = None
 
@@ -1734,17 +913,15 @@ def find_best_recipe(
 
     for candidate in candidates:
 
-        recipe_name = normalize_dish_name(
-            candidate["name"]
+        recipe_name = (
+            normalize_dish_name(
+                candidate["name"]
+            )
         )
 
         recipe_tokens = set(
             recipe_name.split()
         )
-
-        # ----------------------------------------------------
-        # Every requested token must exist
-        # ----------------------------------------------------
 
         all_words_present = True
 
@@ -1753,83 +930,65 @@ def find_best_recipe(
             if token == "biryani":
 
                 if (
-                    "biryani" not in recipe_tokens
+                    "biryani"
+                    not in recipe_tokens
                     and
-                    "biriyani" not in recipe_tokens
+                    "biriyani"
+                    not in recipe_tokens
                 ):
 
                     all_words_present = False
-
                     break
 
             elif token == "kebab":
 
                 if (
-                    "kebab" not in recipe_tokens
+                    "kebab"
+                    not in recipe_tokens
                     and
-                    "kabob" not in recipe_tokens
+                    "kabob"
+                    not in recipe_tokens
                 ):
 
                     all_words_present = False
-
                     break
 
             elif token == "sambar":
 
                 if (
-                    "sambar" not in recipe_tokens
+                    "sambar"
+                    not in recipe_tokens
                     and
-                    "sambhar" not in recipe_tokens
+                    "sambhar"
+                    not in recipe_tokens
                 ):
 
                     all_words_present = False
-
                     break
 
             elif token not in recipe_tokens:
 
                 all_words_present = False
-
                 break
 
         if not all_words_present:
 
             continue
 
-        # ====================================================
-        # SCORING
-        # ====================================================
-
         score = 0
-
-        # ----------------------------------------------------
-        # Exact name
-        # ----------------------------------------------------
 
         if recipe_name == normalized_query:
 
             score += 1000
 
-        # ----------------------------------------------------
-        # Query appears inside recipe name
-        # ----------------------------------------------------
-
         if normalized_query in recipe_name:
 
             score += 300
-
-        # ----------------------------------------------------
-        # Matching tokens
-        # ----------------------------------------------------
 
         score += (
             len(query_tokens)
             * 200
         )
-
-        # ----------------------------------------------------
-        # Similarity
-        # ----------------------------------------------------
 
         similarity = SequenceMatcher(
 
@@ -1845,10 +1004,6 @@ def find_best_recipe(
             similarity
             * 100
         )
-
-        # ----------------------------------------------------
-        # Penalize extra words
-        # ----------------------------------------------------
 
         extra_words = max(
 
@@ -1871,17 +1026,9 @@ def find_best_recipe(
 
             best = candidate
 
-    # ========================================================
-    # NO MATCH
-    # ========================================================
-
     if best is None:
 
         return None
-
-    # ========================================================
-    # WEAK MATCH PROTECTION
-    # ========================================================
 
     if best_score < 300:
 
@@ -1891,7 +1038,947 @@ def find_best_recipe(
 
 
 # ============================================================
-# WHAT DO YOU WANT TO MAKE?
+# DECODE SQLITE RECIPE DETAILS
+# ============================================================
+
+def decode_recipe_details(
+    details
+):
+
+    if details is None:
+
+        return None
+
+    try:
+
+        if isinstance(
+            details,
+            memoryview
+        ):
+
+            details = (
+                details.tobytes()
+            )
+
+        if isinstance(
+            details,
+            bytes
+        ):
+
+            try:
+
+                details = zlib.decompress(
+                    details
+                )
+
+            except Exception:
+
+                pass
+
+            try:
+
+                return json.loads(
+                    details.decode(
+                        "utf-8"
+                    )
+                )
+
+            except Exception:
+
+                try:
+
+                    return pickle.loads(
+                        details
+                    )
+
+                except Exception:
+
+                    return None
+
+        if isinstance(
+            details,
+            str
+        ):
+
+            try:
+
+                return json.loads(
+                    details
+                )
+
+            except Exception:
+
+                return None
+
+        if isinstance(
+            details,
+            dict
+        ):
+
+            return details
+
+    except Exception as error:
+
+        print(
+            "Recipe detail decode error:",
+            error
+        )
+
+    return None
+
+
+# ============================================================
+# CONVERT VALUE TO LIST
+# ============================================================
+
+def to_list(
+    value
+):
+
+    if value is None:
+
+        return []
+
+    if isinstance(
+        value,
+        list
+    ):
+
+        return value
+
+    if isinstance(
+        value,
+        tuple
+    ):
+
+        return list(value)
+
+    if isinstance(
+        value,
+        str
+    ):
+
+        text = value.strip()
+
+        if not text:
+
+            return []
+
+        try:
+
+            parsed = json.loads(
+                text
+            )
+
+            if isinstance(
+                parsed,
+                list
+            ):
+
+                return parsed
+
+        except Exception:
+
+            pass
+
+        return [text]
+
+    return [value]
+
+
+# ============================================================
+# CLEAN VALUE
+# ============================================================
+
+def clean_value(
+    value,
+    default=""
+):
+
+    if value is None:
+
+        return default
+
+    if isinstance(
+        value,
+        str
+    ):
+
+        if value.strip().lower() in {
+            "",
+            "nan",
+            "none",
+            "null"
+        }:
+
+            return default
+
+    return value
+
+
+# ============================================================
+# BUILD RECIPE DETAIL
+# ============================================================
+
+def build_recipe_detail(
+    recipe_data
+):
+
+    if not recipe_data:
+
+        return None
+
+    # --------------------------------------------------------
+    # Already-built recipe object
+    # --------------------------------------------------------
+
+    if (
+        "name" in recipe_data
+        and
+        "ingredients" in recipe_data
+        and
+        "instructions" in recipe_data
+    ):
+
+        recipe = dict(
+            recipe_data
+        )
+
+        ingredients = []
+
+        for item in to_list(
+            recipe.get(
+                "ingredients",
+                []
+            )
+        ):
+
+            if isinstance(
+                item,
+                dict
+            ):
+
+                item = dict(item)
+
+                normalized = item.get(
+                    "normalized_ingredient",
+                    item.get(
+                        "ingredient",
+                        ""
+                    )
+                )
+
+                if "substitutions" not in item:
+
+                    item["substitutions"] = (
+                        get_cached_substitutes(
+                            normalized
+                        )
+                    )
+
+                ingredients.append(
+                    item
+                )
+
+            else:
+
+                ingredient_text = str(
+                    item
+                ).strip()
+
+                if not ingredient_text:
+
+                    continue
+
+                parsed = (
+                    extract_ingredient_info(
+                        ingredient_text
+                    )
+                )
+
+                normalized = (
+                    parsed[0].get(
+                        "normalized_ingredient",
+                        ingredient_text
+                    )
+                    if parsed
+                    else ingredient_text
+                )
+
+                ingredients.append({
+
+                    "ingredient":
+                        ingredient_text,
+
+                    "display":
+                        ingredient_text,
+
+                    "normalized_ingredient":
+                        normalized,
+
+                    "quantity":
+                        parsed[0].get(
+                            "quantity",
+                            ""
+                        )
+                        if parsed else "",
+
+                    "unit":
+                        parsed[0].get(
+                            "unit",
+                            ""
+                        )
+                        if parsed else "",
+
+                    "substitutions":
+                        get_cached_substitutes(
+                            normalized
+                        )
+
+                })
+
+        recipe["ingredients"] = ingredients
+
+        recipe["instructions"] = [
+
+            str(item).strip()
+
+            for item in to_list(
+                recipe.get(
+                    "instructions",
+                    []
+                )
+            )
+
+            if str(item).strip()
+
+        ]
+
+        return recipe
+
+    # --------------------------------------------------------
+    # Original Food.com-style data
+    # --------------------------------------------------------
+
+    quantities = to_list(
+        recipe_data.get(
+            "RecipeIngredientQuantities",
+            []
+        )
+    )
+
+    ingredients = to_list(
+        recipe_data.get(
+            "RecipeIngredientParts",
+            []
+        )
+    )
+
+    ingredient_list = []
+
+    for index, ingredient in enumerate(
+        ingredients
+    ):
+
+        ingredient = str(
+            ingredient
+        ).strip()
+
+        if not ingredient:
+
+            continue
+
+        quantity = ""
+
+        if index < len(
+            quantities
+        ):
+
+            quantity = str(
+                quantities[index]
+            ).strip()
+
+            if quantity.lower() in {
+                "nan",
+                "none",
+                "null"
+            }:
+
+                quantity = ""
+
+        combined = (
+            f"{quantity} "
+            f"{ingredient}"
+        ).strip()
+
+        parsed = (
+            extract_ingredient_info(
+                combined
+            )
+        )
+
+        normalized = ingredient
+
+        parsed_quantity = quantity
+
+        parsed_unit = ""
+
+        if parsed:
+
+            parsed_item = parsed[0]
+
+            normalized = (
+                parsed_item.get(
+                    "normalized_ingredient",
+                    ingredient
+                )
+            )
+
+            parsed_quantity = (
+                parsed_item.get(
+                    "quantity",
+                    quantity
+                )
+            )
+
+            parsed_unit = (
+                parsed_item.get(
+                    "unit",
+                    ""
+                )
+            )
+
+        substitutions = (
+            get_cached_substitutes(
+                normalized
+            )
+        )
+
+        if (
+            parsed_quantity
+            and
+            parsed_unit
+        ):
+
+            display = (
+
+                f"{parsed_quantity} "
+                f"{parsed_unit} "
+                f"{ingredient}"
+
+            )
+
+        elif parsed_quantity:
+
+            display = (
+
+                f"{parsed_quantity} "
+                f"{ingredient}"
+
+            )
+
+        else:
+
+            display = ingredient
+
+        ingredient_list.append({
+
+            "ingredient":
+                ingredient,
+
+            "display":
+                display,
+
+            "normalized_ingredient":
+                normalized,
+
+            "quantity":
+                parsed_quantity,
+
+            "unit":
+                parsed_unit,
+
+            "substitutions":
+                substitutions
+
+        })
+
+    instructions = [
+
+        str(item).strip()
+
+        for item in to_list(
+            recipe_data.get(
+                "RecipeInstructions",
+                []
+            )
+        )
+
+        if str(item).strip()
+
+    ]
+
+    return {
+
+        "id": clean_value(
+            recipe_data.get(
+                "RecipeId",
+                recipe_data.get(
+                    "id",
+                    ""
+                )
+            )
+        ),
+
+        "name": clean_value(
+            recipe_data.get(
+                "Name",
+                recipe_data.get(
+                    "name",
+                    ""
+                )
+            )
+        ),
+
+        "category": clean_value(
+            recipe_data.get(
+                "RecipeCategory",
+                recipe_data.get(
+                    "category",
+                    ""
+                )
+            )
+        ),
+
+        "description": clean_value(
+            recipe_data.get(
+                "Description",
+                recipe_data.get(
+                    "description",
+                    ""
+                )
+            )
+        ),
+
+        "keywords": clean_value(
+            recipe_data.get(
+                "Keywords",
+                recipe_data.get(
+                    "keywords",
+                    ""
+                )
+            )
+        ),
+
+        "prep_time": clean_value(
+            recipe_data.get(
+                "PrepTime",
+                recipe_data.get(
+                    "prep_time",
+                    ""
+                )
+            )
+        ),
+
+        "cook_time": clean_value(
+            recipe_data.get(
+                "CookTime",
+                recipe_data.get(
+                    "cook_time",
+                    ""
+                )
+            )
+        ),
+
+        "total_time": clean_value(
+            recipe_data.get(
+                "TotalTime",
+                recipe_data.get(
+                    "total_time",
+                    ""
+                )
+            )
+        ),
+
+        "servings": clean_value(
+            recipe_data.get(
+                "RecipeServings",
+                recipe_data.get(
+                    "servings",
+                    ""
+                )
+            )
+        ),
+
+        "calories": clean_value(
+            recipe_data.get(
+                "Calories",
+                recipe_data.get(
+                    "calories",
+                    ""
+                )
+            )
+        ),
+
+        "ingredients":
+            ingredient_list,
+
+        "instructions":
+            instructions
+
+    }
+
+
+# ============================================================
+# LOAD RECIPE FROM SQLITE BY ID
+# ============================================================
+
+def load_recipe_from_sqlite_by_id(
+    recipe_id
+):
+
+    start_time = time.perf_counter()
+
+    try:
+
+        connection = (
+            get_sqlite_connection()
+        )
+
+        cursor = (
+            connection.cursor()
+        )
+
+        cursor.execute(
+            "PRAGMA table_info(recipes)"
+        )
+
+        columns = {
+
+            row["name"]
+
+            for row in cursor.fetchall()
+
+        }
+
+        # ----------------------------------------------------
+        # New database with compressed details
+        # ----------------------------------------------------
+
+        if "details" in columns:
+
+            cursor.execute(
+
+                """
+                SELECT
+                    recipe_id,
+                    name,
+                    category,
+                    ingredients,
+                    details
+                FROM recipes
+                WHERE recipe_id = ?
+                LIMIT 1
+                """,
+
+                (
+                    int(float(recipe_id)),
+                )
+
+            )
+
+        else:
+
+            cursor.execute(
+
+                """
+                SELECT
+                    recipe_id,
+                    name,
+                    category,
+                    ingredients
+                FROM recipes
+                WHERE recipe_id = ?
+                LIMIT 1
+                """,
+
+                (
+                    int(float(recipe_id)),
+                )
+
+            )
+
+        row = cursor.fetchone()
+
+        connection.close()
+
+        if row is None:
+
+            return None
+
+        # ----------------------------------------------------
+        # Decode complete details
+        # ----------------------------------------------------
+
+        if "details" in columns:
+
+            details = (
+                decode_recipe_details(
+                    row["details"]
+                )
+            )
+
+            if details:
+
+                recipe = (
+                    build_recipe_detail(
+                        details
+                    )
+                )
+
+                if recipe:
+
+                    elapsed = (
+                        time.perf_counter()
+                        -
+                        start_time
+                    )
+
+                    print(
+                        f"SQLite recipe lookup: "
+                        f"{elapsed:.3f} seconds"
+                    )
+
+                    return recipe
+
+        # ----------------------------------------------------
+        # Fallback for older SQLite database
+        # ----------------------------------------------------
+
+        fallback = {
+
+            "RecipeId":
+                row["recipe_id"],
+
+            "Name":
+                row["name"],
+
+            "RecipeCategory":
+                row["category"],
+
+            "RecipeIngredientParts":
+                json.loads(
+                    row["ingredients"]
+                )
+                if row["ingredients"]
+                else [],
+
+            "RecipeInstructions":
+                []
+
+        }
+
+        return build_recipe_detail(
+            fallback
+        )
+
+    except Exception as error:
+
+        print()
+        print("=" * 60)
+        print("SQLITE RECIPE LOOKUP ERROR")
+        print("=" * 60)
+        print(error)
+        print("=" * 60)
+
+        return None
+
+
+# ============================================================
+# LOAD RECIPE BY NAME
+# ============================================================
+
+def load_recipe_from_sqlite(
+    recipe_name
+):
+
+    matched_recipe = (
+        find_best_recipe(
+            recipe_name
+        )
+    )
+
+    if matched_recipe is None:
+
+        return None
+
+    return load_recipe_from_sqlite_by_id(
+        matched_recipe["recipe_id"]
+    )
+
+
+# ============================================================
+# RECIPE DETAILS
+# ============================================================
+
+@app.route(
+    "/recipe-details",
+    methods=["GET", "POST"]
+)
+def recipe_details():
+
+    try:
+
+        # ----------------------------------------------------
+        # GET
+        # ----------------------------------------------------
+
+        if request.method == "GET":
+
+            recipe_name = request.args.get(
+                "name",
+                ""
+            ).strip()
+
+            if not recipe_name:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message":
+                        "Recipe name is required."
+
+                })
+
+            recipe = (
+                load_recipe_from_sqlite(
+                    recipe_name
+                )
+            )
+
+            if recipe is None:
+
+                return jsonify({
+
+                    "success": False,
+
+                    "message":
+                        "Recipe not found."
+
+                })
+
+            return jsonify(
+                make_json_safe({
+
+                    "success": True,
+
+                    "recipe": recipe,
+
+                    "result": recipe
+
+                })
+            )
+
+        # ----------------------------------------------------
+        # POST
+        # ----------------------------------------------------
+
+        data = request.get_json()
+
+        if not data:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "No recipe data received."
+
+            })
+
+        recipe_id = data.get(
+            "recipe_id"
+        )
+
+        recipe_name = data.get(
+            "name",
+            ""
+        ).strip()
+
+        if recipe_id is not None:
+
+            recipe = (
+                load_recipe_from_sqlite_by_id(
+                    recipe_id
+                )
+            )
+
+        elif recipe_name:
+
+            recipe = (
+                load_recipe_from_sqlite(
+                    recipe_name
+                )
+            )
+
+        else:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "Recipe ID or recipe name is required."
+
+            })
+
+        if recipe is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "Recipe not found."
+
+            })
+
+        return jsonify(
+            make_json_safe({
+
+                "success": True,
+
+                "recipe": recipe,
+
+                "result": recipe
+
+            })
+        )
+
+    except Exception as error:
+
+        print()
+        print("=" * 60)
+        print("RECIPE DETAILS ERROR")
+        print(error)
+        print("=" * 60)
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "Unable to load recipe details.",
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+# ============================================================
+# MAKE RECIPE
 # ============================================================
 
 @app.route(
@@ -1912,7 +1999,8 @@ def make_recipe():
 
                 "success": False,
 
-                "message": "No request data received."
+                "message":
+                    "No request data received."
 
             })
 
@@ -1934,217 +2022,96 @@ def make_recipe():
 
                 "success": False,
 
-                "message": "Please enter a dish name."
+                "message":
+                    "Please enter a dish name."
 
             })
 
         print()
         print("=" * 60)
+        print("MAKE RECIPE")
+        print("Dish:", dish_name)
 
-        print("DISH SEARCH:")
-        print(dish_name)
+        # ----------------------------------------------------
+        # Find recipe
+        # ----------------------------------------------------
 
-        # ====================================================
-        # FIND RECIPE IN SQLITE
-        # ====================================================
-
-        sqlite_start = time.perf_counter()
-
-        matched_recipe = find_best_recipe(
-            dish_name
+        search_start = (
+            time.perf_counter()
         )
 
-        sqlite_time = (
+        matched_recipe = (
+            find_best_recipe(
+                dish_name
+            )
+        )
+
+        search_time = (
             time.perf_counter()
             -
-            sqlite_start
+            search_start
         )
 
         if matched_recipe is None:
-
-            print(
-                "No suitable recipe found."
-            )
-
-            print(
-                f"SQLite search: "
-                f"{sqlite_time:.3f} seconds"
-            )
-
-            print("=" * 60)
 
             return jsonify({
 
                 "success": False,
 
-                "message": (
-
+                "message":
                     f"No matching recipe found "
                     f"for '{dish_name}'."
 
-                )
-
             })
 
-        recipe_id = matched_recipe[
-            "recipe_id"
-        ]
+        recipe_id = (
+            matched_recipe[
+                "recipe_id"
+            ]
+        )
 
-        matched_name = matched_recipe[
-            "name"
-        ]
-
-        print()
-        print("SQLite match:")
-        print(matched_name)
+        print(
+            "SQLite match:",
+            matched_recipe["name"]
+        )
 
         print(
             "Recipe ID:",
             recipe_id
         )
 
-        # ====================================================
-        # LOAD EXACT RECIPE BY ID
-        # ====================================================
+        # ----------------------------------------------------
+        # Load complete recipe
+        # ----------------------------------------------------
 
-        parquet_start = time.perf_counter()
-
-        recipe_row = load_recipe_from_parquet_by_id(
-            recipe_id
+        load_start = (
+            time.perf_counter()
         )
 
-        parquet_time = (
+        recipe = (
+            load_recipe_from_sqlite_by_id(
+                recipe_id
+            )
+        )
+
+        load_time = (
             time.perf_counter()
             -
-            parquet_start
+            load_start
         )
 
-        if recipe_row is None:
-
-            print(
-                "Exact RecipeId was not found in Parquet."
-            )
-
-            print(
-                f"SQLite search: "
-                f"{sqlite_time:.3f} seconds"
-            )
-
-            print(
-                f"Parquet load: "
-                f"{parquet_time:.3f} seconds"
-            )
-
-            print("=" * 60)
+        if recipe is None:
 
             return jsonify({
 
                 "success": False,
 
-                "message": (
-
-                    "The recipe was found in the "
-                    "search index, but its complete "
-                    "recipe data could not be loaded."
-
-                )
+                "message":
+                    "Recipe was found, "
+                    "but complete recipe data "
+                    "could not be loaded."
 
             })
-
-        print()
-        print("Parquet match:")
-        print(
-            recipe_row["Name"]
-        )
-
-        # ====================================================
-        # SAFETY CHECK
-        # ====================================================
-
-        parquet_recipe_id = recipe_row[
-            "RecipeId"
-        ]
-
-        try:
-
-            parquet_recipe_id = int(
-                float(
-                    parquet_recipe_id
-                )
-            )
-
-            expected_recipe_id = int(
-                float(
-                    recipe_id
-                )
-            )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
-            print(
-                "Recipe ID conversion failed."
-            )
-
-            return jsonify({
-
-                "success": False,
-
-                "message": (
-                    "Recipe verification failed."
-                )
-
-            }), 500
-
-        if parquet_recipe_id != expected_recipe_id:
-
-            print(
-                "RECIPE ID MISMATCH!"
-            )
-
-            print(
-                "SQLite ID:",
-                expected_recipe_id
-            )
-
-            print(
-                "Parquet ID:",
-                parquet_recipe_id
-            )
-
-            print("=" * 60)
-
-            return jsonify({
-
-                "success": False,
-
-                "message": (
-
-                    "Recipe verification failed. "
-                    "The recipe data did not match "
-                    "the search result."
-
-                )
-
-            }), 500
-
-        # ====================================================
-        # BUILD RECIPE
-        # ====================================================
-
-        build_start = time.perf_counter()
-
-        recipe = build_recipe_detail(
-            recipe_row
-        )
-
-        build_time = (
-            time.perf_counter()
-            -
-            build_start
-        )
 
         total_time = (
             time.perf_counter()
@@ -2152,26 +2119,17 @@ def make_recipe():
             start_time
         )
 
-        # ====================================================
-        # PERFORMANCE
-        # ====================================================
-
         print()
         print("-" * 60)
 
         print(
-            f"SQLite search:   "
-            f"{sqlite_time:.3f} seconds"
+            f"SQLite search:  "
+            f"{search_time:.3f} seconds"
         )
 
         print(
-            f"Parquet lookup:  "
-            f"{parquet_time:.3f} seconds"
-        )
-
-        print(
-            f"Recipe building: "
-            f"{build_time:.3f} seconds"
+            f"Recipe loading: "
+            f"{load_time:.3f} seconds"
         )
 
         print(
@@ -2179,24 +2137,21 @@ def make_recipe():
             f"{total_time:.3f} seconds"
         )
 
-        print("-" * 60)
-
         print(
             "Recipe successfully loaded."
         )
 
+        print("-" * 60)
         print("=" * 60)
-
-        # ====================================================
-        # RESPONSE
-        # ====================================================
 
         return jsonify(
             make_json_safe({
 
                 "success": True,
 
-                "recipe": recipe
+                "recipe": recipe,
+
+                "result": recipe
 
             })
         )
@@ -2205,27 +2160,72 @@ def make_recipe():
 
         print()
         print("=" * 60)
-
-        print(
-            "MAKE RECIPE ERROR:"
-        )
-
+        print("MAKE RECIPE ERROR")
         print(error)
-
         print("=" * 60)
 
         return jsonify({
 
             "success": False,
 
-            "message": (
-
+            "message":
                 "An error occurred while "
-                "finding the recipe."
+                "finding the recipe.",
 
-            ),
+            "error":
+                str(error)
 
-            "error": str(error)
+        }), 500
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.route("/health")
+def health():
+
+    try:
+
+        connection = (
+            get_sqlite_connection()
+        )
+
+        cursor = (
+            connection.cursor()
+        )
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM recipes"
+        )
+
+        recipe_count = (
+            cursor.fetchone()[0]
+        )
+
+        connection.close()
+
+        return jsonify({
+
+            "status": "ok",
+
+            "database":
+                "connected",
+
+            "recipes":
+                recipe_count
+
+        })
+
+    except Exception as error:
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(error)
 
         }), 500
 
@@ -2237,16 +2237,19 @@ def make_recipe():
 if __name__ == "__main__":
 
     print("=" * 60)
-
-    print(
-        "              RecipeSense"
-    )
-
-    print(
-        " AI Recipe Understanding & Ingredient Substitution System"
-    )
-
+    print("              RecipeSense")
+    print(" AI Recipe Understanding & Ingredient Substitution System")
     print("=" * 60)
+
+    print()
+
+    print(
+        "Database:"
+    )
+
+    print(
+        SQLITE_FILE
+    )
 
     print()
 

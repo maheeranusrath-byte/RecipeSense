@@ -1,3 +1,8 @@
+# ============================================================
+# RecipeSense
+# Fast SQLite Recipe Search
+# ============================================================
+
 import json
 import re
 import sqlite3
@@ -10,11 +15,15 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
-SQLITE_FILE = PROJECT_DIR / "data" / "recipe_index.db"
+SQLITE_FILE = (
+    PROJECT_DIR
+    / "data"
+    / "recipe_index.db"
+)
 
 
 # ============================================================
-# SQLITE CONNECTION
+# SQLITE
 # ============================================================
 
 def get_connection():
@@ -45,240 +54,55 @@ def get_database_stats():
     recipe_count = cursor.fetchone()[0]
 
     cursor.execute(
-        "SELECT COUNT(DISTINCT ingredient) FROM ingredient_index"
+        """
+        SELECT COUNT(DISTINCT ingredient)
+        FROM ingredient_index
+        """
     )
 
-    ingredient_count = cursor.fetchone()[0]
+    ingredient_count = (
+        cursor.fetchone()[0]
+    )
 
     connection.close()
 
-    return recipe_count, ingredient_count
+    return (
+        recipe_count,
+        ingredient_count
+    )
 
 
-recipe_count, ingredient_count = get_database_stats()
+try:
 
-print("RecipeSense SQLite index ready.")
-print(
-    f"Recipes available: {recipe_count}"
-)
-print(
-    f"Ingredients indexed: {ingredient_count}"
-)
+    recipe_count, ingredient_count = (
+        get_database_stats()
+    )
+
+    print(
+        "RecipeSense SQLite index ready."
+    )
+
+    print(
+        f"Recipes available: "
+        f"{recipe_count}"
+    )
+
+    print(
+        f"Ingredients indexed: "
+        f"{ingredient_count}"
+    )
+
+except Exception as error:
+
+    print(
+        "SQLite database initialization failed:"
+    )
+
+    print(error)
 
 
 # ============================================================
 # INGREDIENT NORMALIZATION
-# ============================================================
-
-def normalize_ingredient(ingredient):
-
-    if ingredient is None:
-        return ""
-
-    ingredient = str(
-        ingredient
-    ).lower().strip()
-
-    # --------------------------------------------------------
-    # Replace common symbols
-    # --------------------------------------------------------
-
-    ingredient = ingredient.replace(
-        "&",
-        " and "
-    )
-
-    # --------------------------------------------------------
-    # Remove punctuation
-    # --------------------------------------------------------
-
-    ingredient = re.sub(
-        r"[^a-z0-9\s]",
-        " ",
-        ingredient
-    )
-
-    # --------------------------------------------------------
-    # Remove extra spaces
-    # --------------------------------------------------------
-
-    ingredient = re.sub(
-        r"\s+",
-        " ",
-        ingredient
-    ).strip()
-
-    # --------------------------------------------------------
-    # Quantity / unit words
-    # --------------------------------------------------------
-
-    words_to_remove = {
-        "cup",
-        "cups",
-        "tablespoon",
-        "tablespoons",
-        "tbsp",
-        "teaspoon",
-        "teaspoons",
-        "tsp",
-        "gram",
-        "grams",
-        "g",
-        "kg",
-        "kilogram",
-        "kilograms",
-        "ml",
-        "milliliter",
-        "milliliters",
-        "liter",
-        "liters",
-        "l",
-        "ounce",
-        "ounces",
-        "oz",
-        "pound",
-        "pounds",
-        "lb",
-        "lbs",
-        "pinch",
-        "dash"
-    }
-
-    words = ingredient.split()
-
-    words = [
-        word
-        for word in words
-        if word not in words_to_remove
-    ]
-
-    ingredient = " ".join(
-        words
-    )
-
-    # --------------------------------------------------------
-    # Preparation / descriptor words
-    # --------------------------------------------------------
-
-    preparation_words = [
-        "chopped",
-        "diced",
-        "sliced",
-        "minced",
-        "grated",
-        "shredded",
-        "crushed",
-        "ground",
-        "fresh",
-        "frozen",
-        "cooked",
-        "raw",
-        "melted",
-        "softened",
-        "large",
-        "small",
-        "medium",
-        "boneless",
-        "skinless",
-        "seedless",
-        "ripe",
-        "whole",
-        "halved",
-        "quartered",
-        "peeled"
-    ]
-
-    for word in preparation_words:
-
-        ingredient = re.sub(
-            r"\b" + re.escape(word) + r"\b",
-            "",
-            ingredient
-        )
-
-    # --------------------------------------------------------
-    # Remove common ingredient-form words
-    # --------------------------------------------------------
-
-    ingredient = re.sub(
-        r"\bcloves?\b",
-        "",
-        ingredient
-    )
-
-    ingredient = re.sub(
-        r"\bpieces?\b",
-        "",
-        ingredient
-    )
-
-    ingredient = re.sub(
-        r"\bstrips?\b",
-        "",
-        ingredient
-    )
-
-    ingredient = re.sub(
-        r"\bslices?\b",
-        "",
-        ingredient
-    )
-
-    ingredient = re.sub(
-        r"\bchunks?\b",
-        "",
-        ingredient
-    )
-
-    ingredient = re.sub(
-        r"\bpackages?\b",
-        "",
-        ingredient
-    )
-
-    # --------------------------------------------------------
-    # Remove "of"
-    # --------------------------------------------------------
-
-    ingredient = re.sub(
-        r"\bof\b",
-        "",
-        ingredient
-    )
-
-    # --------------------------------------------------------
-    # Remove extra spaces again
-    # --------------------------------------------------------
-
-    ingredient = re.sub(
-        r"\s+",
-        " ",
-        ingredient
-    ).strip()
-
-    # --------------------------------------------------------
-    # Basic plural normalization
-    # --------------------------------------------------------
-
-    if ingredient.endswith("ies"):
-
-        ingredient = (
-            ingredient[:-3]
-            + "y"
-        )
-
-    elif (
-        ingredient.endswith("s")
-        and not ingredient.endswith("ss")
-    ):
-
-        ingredient = ingredient[:-1]
-
-    return ingredient.strip()
-
-
-# ============================================================
-# INGREDIENT ALIASES
 # ============================================================
 
 INGREDIENT_ALIASES = {
@@ -315,14 +139,12 @@ INGREDIENT_ALIASES = {
 
     "yogurt": "yogurt",
     "yoghurt": "yogurt",
-
     "curd": "yogurt",
 
     "rice": "rice",
 
     "flour": "flour",
     "all purpose flour": "flour",
-
     "maida": "flour",
 
     "sugar": "sugar",
@@ -333,57 +155,240 @@ INGREDIENT_ALIASES = {
 
     "oil": "oil",
     "vegetable oil": "oil",
-
     "olive oil": "oil"
 }
 
 
-# ============================================================
-# NORMALIZE WITH ALIASES
-# ============================================================
+def normalize_ingredient(
+    ingredient
+):
 
-def normalize_with_alias(ingredient):
+    if ingredient is None:
 
-    ingredient = normalize_ingredient(
+        return ""
+
+    ingredient = str(
+        ingredient
+    ).lower().strip()
+
+    ingredient = re.sub(
+        r"[^a-z0-9\s]",
+        " ",
         ingredient
     )
 
-    if not ingredient:
-        return ""
+    ingredient = re.sub(
+        r"\s+",
+        " ",
+        ingredient
+    ).strip()
 
-    if ingredient in INGREDIENT_ALIASES:
+    # --------------------------------------------------------
+    # Remove quantity/unit words
+    # --------------------------------------------------------
 
-        return INGREDIENT_ALIASES[
+    words_to_remove = {
+
+        "cup",
+        "cups",
+
+        "tablespoon",
+        "tablespoons",
+        "tbsp",
+
+        "teaspoon",
+        "teaspoons",
+        "tsp",
+
+        "gram",
+        "grams",
+        "g",
+
+        "kg",
+        "kilogram",
+        "kilograms",
+
+        "ml",
+        "milliliter",
+        "milliliters",
+
+        "liter",
+        "liters",
+        "l",
+
+        "ounce",
+        "ounces",
+        "oz",
+
+        "pound",
+        "pounds",
+        "lb",
+        "lbs",
+
+        "pinch",
+        "dash"
+    }
+
+    words = ingredient.split()
+
+    words = [
+
+        word
+
+        for word in words
+
+        if word not in words_to_remove
+    ]
+
+    ingredient = " ".join(
+        words
+    )
+
+    # --------------------------------------------------------
+    # Preparation words
+    # --------------------------------------------------------
+
+    preparation_words = [
+
+        "chopped",
+        "diced",
+        "sliced",
+        "minced",
+        "grated",
+        "shredded",
+        "crushed",
+        "ground",
+
+        "fresh",
+        "frozen",
+        "cooked",
+        "raw",
+
+        "melted",
+        "softened",
+
+        "large",
+        "small",
+        "medium",
+
+        "boneless",
+        "skinless",
+        "seedless",
+
+        "ripe",
+        "whole",
+        "halved",
+        "quartered",
+        "peeled"
+    ]
+
+    for word in preparation_words:
+
+        ingredient = re.sub(
+
+            r"\b"
+            + re.escape(word)
+            + r"\b",
+
+            "",
+
             ingredient
-        ]
+        )
 
-    return ingredient
+    ingredient = re.sub(
+
+        r"\bcloves?\b",
+        "",
+        ingredient
+    )
+
+    ingredient = re.sub(
+
+        r"\bpieces?\b",
+        "",
+        ingredient
+    )
+
+    ingredient = re.sub(
+
+        r"\bof\b",
+        "",
+        ingredient
+    )
+
+    ingredient = re.sub(
+
+        r"\s+",
+        " ",
+        ingredient
+    ).strip()
+
+    # --------------------------------------------------------
+    # Basic plural normalization
+    # --------------------------------------------------------
+
+    if ingredient.endswith("ies"):
+
+        ingredient = (
+            ingredient[:-3]
+            + "y"
+        )
+
+    elif (
+
+        ingredient.endswith("s")
+
+        and
+
+        not ingredient.endswith("ss")
+    ):
+
+        ingredient = (
+            ingredient[:-1]
+        )
+
+    # --------------------------------------------------------
+    # Aliases
+    # --------------------------------------------------------
+
+    ingredient = INGREDIENT_ALIASES.get(
+
+        ingredient,
+
+        ingredient
+    )
+
+    return ingredient.strip()
 
 
 # ============================================================
 # USER INGREDIENTS
 # ============================================================
 
-def normalize_user_ingredients(user_input):
+def normalize_user_ingredients(
+    user_input
+):
 
     if user_input is None:
 
         return set()
-
-    # --------------------------------------------------------
-    # Support both string and list input
-    # --------------------------------------------------------
 
     if isinstance(
         user_input,
         str
     ):
 
-        ingredients = user_input.split(",")
+        ingredients = (
+            user_input.split(",")
+        )
 
     elif isinstance(
         user_input,
-        (list, tuple, set)
+        (
+            list,
+            tuple,
+            set
+        )
     ):
 
         ingredients = user_input
@@ -396,8 +401,10 @@ def normalize_user_ingredients(user_input):
 
     for ingredient in ingredients:
 
-        ingredient = normalize_with_alias(
-            ingredient
+        ingredient = (
+            normalize_ingredient(
+                ingredient
+            )
         )
 
         if ingredient:
@@ -410,46 +417,12 @@ def normalize_user_ingredients(user_input):
 
 
 # ============================================================
-# NORMALIZE DATABASE INGREDIENT
+# CATEGORY NORMALIZATION
 # ============================================================
 
-def normalize_database_ingredient(
-    ingredient
+def normalize_category(
+    category
 ):
-
-    return normalize_with_alias(
-        ingredient
-    )
-
-
-# ============================================================
-# MATCH CATEGORY
-# ============================================================
-
-def get_category(percentage):
-
-    if percentage >= 75:
-
-        return "Excellent match"
-
-    elif percentage >= 50:
-
-        return "Good match"
-
-    elif percentage >= 25:
-
-        return "Partial match"
-
-    else:
-
-        return "Low match"
-
-
-# ============================================================
-# NORMALIZE RECIPE CATEGORY
-# ============================================================
-
-def normalize_category(category):
 
     if category is None:
 
@@ -490,10 +463,6 @@ def normalize_category(category):
 
 CATEGORY_GROUPS = {
 
-    # --------------------------------------------------------
-    # MAIN COURSE
-    # --------------------------------------------------------
-
     "main course": [
 
         "main course",
@@ -503,903 +472,603 @@ CATEGORY_GROUPS = {
         "one dish meal",
         "one dish meals",
         "entree",
-        "entrees",
-        "meat",
-        "chicken",
-        "pork",
-        "lamb/sheep",
-        "poultry",
-        "beef",
-        "stew",
-        "stews",
-        "curries",
-        "rice",
-        "pasta",
-        "spaghetti"
-
+        "entrees"
     ],
-
-    # --------------------------------------------------------
-    # STARTERS
-    #
-    # Food.com combines many starter/snack recipes under
-    # "Lunch/Snacks". We use that category as the database
-    # source and then rank starter-like recipe names higher.
-    # --------------------------------------------------------
 
     "starters": [
 
-        "lunch/snacks",
-        "appetizer",
-        "appetizers",
         "starter",
         "starters",
-        "hors d'oeuvre",
-        "hors d oeuvres"
-
+        "appetizer",
+        "appetizers",
+        "appetizer snack"
     ],
-
-    # --------------------------------------------------------
-    # DESSERTS
-    # --------------------------------------------------------
 
     "desserts": [
 
         "dessert",
-        "desserts",
-        "frozen desserts",
-        "cheesecake",
-        "pie",
-        "tarts",
-        "candy",
-        "bar cookie",
-        "drop cookies",
-        "gelatin"
-
+        "desserts"
     ],
-
-    # --------------------------------------------------------
-    # SHAKES
-    # --------------------------------------------------------
 
     "shakes": [
 
         "shake",
         "shakes",
-        "smoothie",
-        "smoothies",
         "beverage",
         "beverages",
         "drink",
-        "drinks",
-        "punch beverage"
-
+        "drinks"
     ],
-
-    # --------------------------------------------------------
-    # SALADS
-    # --------------------------------------------------------
 
     "salads": [
 
         "salad",
-        "salads",
-        "salad dressings"
-
+        "salads"
     ],
-
-    # --------------------------------------------------------
-    # SOUPS
-    # --------------------------------------------------------
 
     "soups": [
 
         "soup",
-        "soups",
-        "clear soup",
-        "chowders"
-
+        "soups"
     ],
-
-    # --------------------------------------------------------
-    # SNACKS
-    #
-    # Food.com uses "Lunch/Snacks".
-    # --------------------------------------------------------
 
     "snacks": [
 
-        "lunch/snacks",
         "snack",
         "snacks"
-
     ],
-
-    # --------------------------------------------------------
-    # BREAKFAST
-    # --------------------------------------------------------
 
     "breakfast": [
 
         "breakfast",
-        "breakfasts",
-        "brunch"
-
+        "breakfasts"
     ],
-
-    # --------------------------------------------------------
-    # BREADS
-    # --------------------------------------------------------
 
     "breads": [
 
         "bread",
-        "breads",
-        "quick breads",
-        "yeast breads",
-        "scones"
-
+        "breads"
     ]
 }
 
 
 # ============================================================
-# STARTER / SNACK NAME SIGNALS
-# ============================================================
-
-STARTER_KEYWORDS = [
-
-    "appetizer",
-    "appetisers",
-    "appetizer",
-    "starter",
-    "starters",
-    "hors d'oeuvre",
-    "hors d oeuvres",
-    "dip",
-    "dips",
-    "bruschetta",
-    "pakora",
-    "pakoras",
-    "samosa",
-    "samosas",
-    "spring roll",
-    "spring rolls",
-    "egg roll",
-    "egg rolls",
-    "stuffed mushroom",
-    "stuffed mushrooms",
-    "finger food",
-    "finger foods",
-    "bites",
-    "bite",
-    "canape",
-    "canapes",
-    "croquette",
-    "croquettes",
-    "fritter",
-    "fritters",
-    "tapas"
-]
-
-
-SNACK_KEYWORDS = [
-
-    "snack",
-    "snacks",
-    "chips",
-    "popcorn",
-    "cracker",
-    "crackers",
-    "cookie",
-    "cookies",
-    "trail mix",
-    "granola bar",
-    "granola bars",
-    "energy bar",
-    "energy bars",
-    "munchies",
-    "party mix",
-    "party snack",
-    "party snacks",
-    "nuts",
-    "roasted",
-    "roast",
-    "nachos",
-    "pretzel",
-    "pretzels"
-]
-
-
-# ============================================================
-# CATEGORY SIGNAL SCORE
-# ============================================================
-
-def get_category_signal_score(
-    recipe_name,
-    recipe_category,
-    selected_category
-):
-
-    if not selected_category:
-
-        return 0
-
-    selected_category = normalize_category(
-        selected_category
-    )
-
-    recipe_name = str(
-        recipe_name
-        if recipe_name
-        else ""
-    ).lower()
-
-    recipe_category = str(
-        recipe_category
-        if recipe_category
-        else ""
-    ).lower()
-
-    searchable_text = (
-        recipe_name
-        + " "
-        + recipe_category
-    )
-
-    score = 0
-
-    # --------------------------------------------------------
-    # STARTERS
-    # --------------------------------------------------------
-
-    if selected_category == "starters":
-
-        for keyword in STARTER_KEYWORDS:
-
-            if keyword in searchable_text:
-
-                score += 15
-
-        # A Lunch/Snacks recipe without an obvious
-        # starter keyword is still allowed.
-        if "lunch/snacks" in recipe_category:
-
-            score += 2
-
-    # --------------------------------------------------------
-    # SNACKS
-    # --------------------------------------------------------
-
-    elif selected_category == "snacks":
-
-        for keyword in SNACK_KEYWORDS:
-
-            if keyword in searchable_text:
-
-                score += 15
-
-        if "lunch/snacks" in recipe_category:
-
-            score += 2
-
-    # --------------------------------------------------------
-    # OTHER CATEGORIES
-    # --------------------------------------------------------
-
-    elif selected_category in CATEGORY_GROUPS:
-
-        for keyword in CATEGORY_GROUPS[
-            selected_category
-        ]:
-
-            normalized_keyword = normalize_category(
-                keyword
-            )
-
-            if (
-                recipe_category
-                == normalized_keyword
-            ):
-
-                score += 10
-
-            elif (
-                normalized_keyword
-                in recipe_category
-            ):
-
-                score += 5
-
-    return score
-
-
-# ============================================================
-# CATEGORY FILTERING
+# CATEGORY MATCHING
 # ============================================================
 
 def recipe_matches_category(
+
     recipe_category,
+
     selected_category
+
 ):
 
     if not selected_category:
 
         return True
 
-    recipe_category = normalize_category(
-        recipe_category
+    recipe_category = (
+        normalize_category(
+            recipe_category
+        )
     )
 
-    selected_category = normalize_category(
-        selected_category
+    selected_category = (
+        normalize_category(
+            selected_category
+        )
     )
 
     if not recipe_category:
 
         return False
 
-    # --------------------------------------------------------
-    # Direct match
-    # --------------------------------------------------------
-
-    if recipe_category == selected_category:
+    if (
+        recipe_category
+        == selected_category
+    ):
 
         return True
 
-    # --------------------------------------------------------
-    # Group match
-    # --------------------------------------------------------
-
-    if selected_category in CATEGORY_GROUPS:
+    if (
+        selected_category
+        in CATEGORY_GROUPS
+    ):
 
         for category in CATEGORY_GROUPS[
             selected_category
         ]:
 
-            normalized_category = normalize_category(
-                category
+            category = (
+                normalize_category(
+                    category
+                )
             )
 
-            if recipe_category == normalized_category:
+            if (
+                recipe_category
+                == category
+            ):
 
                 return True
 
-            if normalized_category in recipe_category:
+            if (
+                category
+                in recipe_category
+            ):
 
                 return True
 
-    # --------------------------------------------------------
-    # Flexible matching
-    #
-    # IMPORTANT:
-    # Do not use this blindly for Starters/Snacks because
-    # "starter" and "snack" do not occur in "lunch snacks"
-    # in a reliable way after normalization.
-    # --------------------------------------------------------
+    if (
 
-    if selected_category not in {
-        "starters",
-        "snacks"
-    }:
+        selected_category
+        in recipe_category
 
-        if (
-            selected_category in recipe_category
-            or recipe_category in selected_category
-        ):
+        or
 
-            return True
+        recipe_category
+        in selected_category
+
+    ):
+
+        return True
 
     return False
 
 
 # ============================================================
-# PARSE RECIPE INGREDIENTS
+# MATCH CATEGORY LABEL
 # ============================================================
 
-def parse_recipe_ingredients(
-    ingredients_json
+def get_category(
+    percentage
 ):
 
-    if not ingredients_json:
+    if percentage >= 75:
 
-        return set()
+        return "Excellent match"
 
-    # --------------------------------------------------------
-    # SQLite stores ingredients as JSON text.
-    # --------------------------------------------------------
+    if percentage >= 50:
 
-    try:
+        return "Good match"
 
-        raw_ingredients = json.loads(
-            ingredients_json
-        )
+    if percentage >= 25:
 
-    except (
-        json.JSONDecodeError,
-        TypeError
-    ):
+        return "Partial match"
 
-        return set()
-
-    if not isinstance(
-        raw_ingredients,
-        (list, tuple, set)
-    ):
-
-        return set()
-
-    normalized = set()
-
-    for ingredient in raw_ingredients:
-
-        normalized_ingredient = (
-            normalize_database_ingredient(
-                ingredient
-            )
-        )
-
-        if normalized_ingredient:
-
-            normalized.add(
-                normalized_ingredient
-            )
-
-    return normalized
+    return "Low match"
 
 
 # ============================================================
-# RECIPE SEARCH
+# FAST RECIPE SEARCH
 # ============================================================
 
 def find_recipes(
+
     user_ingredients,
+
     category=None,
+
     limit=10
+
 ):
 
     # --------------------------------------------------------
-    # Normalize user ingredients
+    # Normalize input
     # --------------------------------------------------------
 
-    normalized_user_ingredients = set()
+    if isinstance(
+        user_ingredients,
+        str
+    ):
 
-    for ingredient in user_ingredients:
-
-        normalized = normalize_with_alias(
-            ingredient
+        user_ingredients = (
+            normalize_user_ingredients(
+                user_ingredients
+            )
         )
 
-        if normalized:
+    else:
 
-            normalized_user_ingredients.add(
-                normalized
+        user_ingredients = {
+
+            normalize_ingredient(
+                ingredient
             )
 
-    user_ingredients = (
-        normalized_user_ingredients
-    )
+            for ingredient
+            in user_ingredients
+
+            if normalize_ingredient(
+                ingredient
+            )
+        }
 
     if not user_ingredients:
 
         return []
 
-    # --------------------------------------------------------
-    # Normalize selected category
-    # --------------------------------------------------------
-
-    if category:
-
-        category = normalize_category(
+    category = (
+        normalize_category(
             category
         )
-
-    # --------------------------------------------------------
-    # Open database
-    # --------------------------------------------------------
+        if category
+        else ""
+    )
 
     connection = get_connection()
 
     cursor = connection.cursor()
 
-    # --------------------------------------------------------
-    # Find candidate recipe IDs
-    # --------------------------------------------------------
+    # ========================================================
+    # IMPORTANT PERFORMANCE OPTIMIZATION
+    # ========================================================
+    #
+    # OLD:
+    #
+    # ingredient -> ALL recipe IDs
+    # -> Python set
+    # -> huge batches
+    # -> decode thousands/millions of JSON records
+    #
+    # NEW:
+    #
+    # SQLite directly finds recipes matching multiple
+    # ingredients and returns only the strongest candidates.
+    #
+    # ========================================================
 
-    candidate_ids = set()
-
-    for ingredient in user_ingredients:
-
-        cursor.execute(
-            """
-            SELECT recipe_id
-            FROM ingredient_index
-            WHERE ingredient = ?
-            """,
-            (ingredient,)
-        )
-
-        rows = cursor.fetchall()
-
-        for row in rows:
-
-            candidate_ids.add(
-                int(row["recipe_id"])
-            )
-
-    # --------------------------------------------------------
-    # No candidates
-    # --------------------------------------------------------
-
-    if not candidate_ids:
-
-        connection.close()
-
-        return []
-
-    # --------------------------------------------------------
-    # Process recipes in batches
-    # --------------------------------------------------------
-
-    candidate_ids = list(
-        candidate_ids
+    ingredient_list = sorted(
+        user_ingredients
     )
 
-    BATCH_SIZE = 500
+    placeholders = ",".join(
+        ["?"] * len(
+            ingredient_list
+        )
+    )
+
+    # --------------------------------------------------------
+    # Candidate selection
+    # --------------------------------------------------------
+
+    candidate_limit = 3000
+
+    query = f"""
+
+        SELECT
+
+            r.recipe_id,
+
+            r.name,
+
+            r.category,
+
+            r.ingredients,
+
+            COUNT(
+                DISTINCT ii.ingredient
+            ) AS matched_count
+
+        FROM ingredient_index ii
+
+        INNER JOIN recipes r
+
+            ON r.recipe_id =
+               ii.recipe_id
+
+        WHERE ii.ingredient
+              IN ({placeholders})
+
+        GROUP BY
+
+            r.recipe_id,
+
+            r.name,
+
+            r.category,
+
+            r.ingredients
+
+        HAVING
+
+            COUNT(
+                DISTINCT ii.ingredient
+            ) >= 2
+
+        ORDER BY
+
+            matched_count DESC
+
+        LIMIT ?
+
+    """
+
+    parameters = (
+        ingredient_list
+        + [candidate_limit]
+    )
+
+    cursor.execute(
+        query,
+        parameters
+    )
+
+    candidates = (
+        cursor.fetchall()
+    )
+
+    # ========================================================
+    # EVALUATE ONLY CANDIDATES
+    # ========================================================
 
     results = []
 
     seen_names = set()
 
-    # --------------------------------------------------------
-    # Process batches
-    # --------------------------------------------------------
+    for recipe in candidates:
 
-    for start in range(
-        0,
-        len(candidate_ids),
-        BATCH_SIZE
-    ):
-
-        batch_ids = candidate_ids[
-            start:start + BATCH_SIZE
-        ]
-
-        placeholders = ",".join(
-            ["?"] * len(batch_ids)
+        recipe_category = (
+            recipe["category"]
         )
 
-        cursor.execute(
-            f"""
-            SELECT
-                recipe_id,
-                name,
-                category,
-                ingredients
-            FROM recipes
-            WHERE recipe_id IN ({placeholders})
-            """,
-            tuple(batch_ids)
+        # ----------------------------------------------------
+        # Category filter
+        # ----------------------------------------------------
+
+        if not recipe_matches_category(
+
+            recipe_category,
+
+            category
+
+        ):
+
+            continue
+
+        recipe_name = (
+            recipe["name"]
         )
 
-        recipes = cursor.fetchall()
-
         # ----------------------------------------------------
-        # Evaluate recipes
+        # Duplicate names
         # ----------------------------------------------------
 
-        for recipe in recipes:
+        normalized_name = re.sub(
 
-            recipe_category = recipe[
-                "category"
-            ]
+            r"[^a-z0-9]",
 
-            # ------------------------------------------------
-            # Category filter
-            # ------------------------------------------------
+            "",
 
-            if not recipe_matches_category(
-                recipe_category,
-                category
-            ):
+            recipe_name.lower()
+        )
 
-                continue
+        if (
+            normalized_name
+            in seen_names
+        ):
 
-            recipe_name = recipe[
-                "name"
-            ]
+            continue
 
-            if not recipe_name:
+        # ----------------------------------------------------
+        # Decode ingredient list
+        # ----------------------------------------------------
 
-                continue
+        try:
 
-            # ------------------------------------------------
-            # Duplicate recipe names
-            # ------------------------------------------------
+            recipe_ingredients = set(
 
-            normalized_name = re.sub(
-                r"[^a-z0-9]",
-                "",
-                str(recipe_name).lower()
-            )
-
-            if normalized_name in seen_names:
-
-                continue
-
-            # ------------------------------------------------
-            # Recipe ingredients
-            # ------------------------------------------------
-
-            recipe_ingredients = (
-                parse_recipe_ingredients(
-                    recipe["ingredients"]
+                json.loads(
+                    recipe[
+                        "ingredients"
+                    ]
                 )
             )
 
-            if not recipe_ingredients:
+        except Exception:
 
-                continue
+            recipe_ingredients = set()
 
-            # ------------------------------------------------
-            # Matched ingredients
-            # ------------------------------------------------
+        if not recipe_ingredients:
 
-            matched = (
-                user_ingredients
-                .intersection(
-                    recipe_ingredients
-                )
+            continue
+
+        # ----------------------------------------------------
+        # Matching
+        # ----------------------------------------------------
+
+        matched = (
+
+            user_ingredients
+
+            &
+
+            recipe_ingredients
+        )
+
+        matched_count = len(
+            matched
+        )
+
+        if matched_count < 2:
+
+            continue
+
+        total = len(
+            recipe_ingredients
+        )
+
+        missing = (
+
+            recipe_ingredients
+
+            -
+
+            user_ingredients
+        )
+
+        missing_count = len(
+            missing
+        )
+
+        # ----------------------------------------------------
+        # Percentage
+        # ----------------------------------------------------
+
+        percentage = (
+
+            matched_count
+
+            /
+
+            total
+
+        ) * 100
+
+        # ----------------------------------------------------
+        # User coverage
+        # ----------------------------------------------------
+
+        user_coverage = (
+
+            matched_count
+
+            /
+
+            max(
+                len(
+                    user_ingredients
+                ),
+                1
             )
 
-            # ------------------------------------------------
-            # Require at least 2 ingredients
-            # ------------------------------------------------
+        ) * 100
 
-            if len(matched) < 2:
+        # ----------------------------------------------------
+        # Missing ratio
+        # ----------------------------------------------------
 
-                continue
+        missing_ratio = (
 
-            # ------------------------------------------------
-            # Missing ingredients
-            # ------------------------------------------------
+            missing_count
 
-            missing = (
-                recipe_ingredients
-                - user_ingredients
+            /
+
+            max(
+                total,
+                1
             )
+        )
 
-            total = len(
-                recipe_ingredients
+        # ----------------------------------------------------
+        # Ranking
+        # ----------------------------------------------------
+
+        ranking_score = (
+
+            percentage
+            * 0.60
+
+            +
+
+            user_coverage
+            * 0.25
+
+            +
+
+            (
+                (1 - missing_ratio)
+                * 100
+                * 0.15
             )
+        )
 
-            matched_count = len(
-                matched
-            )
+        results.append({
 
-            missing_count = len(
-                missing
-            )
+            "name":
+                recipe_name,
 
-            if total == 0:
+            "percentage":
+                percentage,
 
-                continue
+            "ranking_score":
+                ranking_score,
 
-            # ------------------------------------------------
-            # Match percentage
-            # ------------------------------------------------
-
-            percentage = (
-                matched_count
-                / total
-            ) * 100
-
-            # ------------------------------------------------
-            # User coverage
-            # ------------------------------------------------
-
-            if len(user_ingredients) > 0:
-
-                user_coverage = (
-                    matched_count
-                    / len(user_ingredients)
-                ) * 100
-
-            else:
-
-                user_coverage = 0
-
-            # ------------------------------------------------
-            # Missing ratio
-            # ------------------------------------------------
-
-            missing_ratio = (
-                missing_count
-                / total
-            )
-
-            # ------------------------------------------------
-            # Base ranking score
-            # ------------------------------------------------
-
-            ranking_score = (
-
-                (percentage * 0.60)
-
-                +
-
-                (user_coverage * 0.25)
-
-                +
-
-                (
-                    (1 - missing_ratio)
-                    * 100
-                    * 0.15
-                )
-            )
-
-            # ------------------------------------------------
-            # Category relevance bonus
-            #
-            # This is especially important for distinguishing
-            # Starters from Snacks.
-            # ------------------------------------------------
-
-            category_signal = (
-                get_category_signal_score(
-                    recipe_name,
-                    recipe_category,
-                    category
-                )
-            )
-
-            ranking_score += category_signal
-
-            # ------------------------------------------------
-            # JSON-safe lists
-            # ------------------------------------------------
-
-            matched_list = sorted(
-                list(matched)
-            )
-
-            missing_list = sorted(
-                list(missing)
-            )
-
-            # ------------------------------------------------
-            # Create result
-            # ------------------------------------------------
-
-            results.append({
-
-                "name": str(
-                    recipe_name
+            "matched":
+                sorted(
+                    matched
                 ),
 
-                "percentage": float(
+            "missing":
+                sorted(
+                    missing
+                ),
+
+            "total":
+                total,
+
+            "matched_count":
+                matched_count,
+
+            "missing_count":
+                missing_count,
+
+            "category":
+                get_category(
                     percentage
                 ),
 
-                "ranking_score": float(
-                    ranking_score
-                ),
+            "recipe_category":
+                recipe_category
+        })
 
-                "matched": matched_list,
-
-                "missing": missing_list,
-
-                "total": int(
-                    total
-                ),
-
-                "matched_count": int(
-                    matched_count
-                ),
-
-                "missing_count": int(
-                    missing_count
-                ),
-
-                "category": str(
-                    get_category(
-                        percentage
-                    )
-                ),
-
-                "recipe_category": str(
-                    recipe_category
-                    if recipe_category
-                    else ""
-                )
-
-            })
-
-            seen_names.add(
-                normalized_name
-            )
-
-    # --------------------------------------------------------
-    # Close database
-    # --------------------------------------------------------
+        seen_names.add(
+            normalized_name
+        )
 
     connection.close()
 
     # ========================================================
-    # SORT RESULTS
+    # FINAL SORT
     # ========================================================
 
     results.sort(
-        key=lambda x: (
-            -x["ranking_score"],
-            -x["matched_count"],
-            x["missing_count"],
-            -x["percentage"]
+
+        key=lambda item: (
+
+            -item[
+                "ranking_score"
+            ],
+
+            -item[
+                "matched_count"
+            ],
+
+            item[
+                "missing_count"
+            ],
+
+            -item[
+                "percentage"
+            ]
         )
     )
 
-    # ========================================================
-    # FINAL JSON-SAFE CLEANUP
-    # ========================================================
-
-    safe_results = []
-
-    for result in results[:limit]:
-
-        safe_results.append({
-
-            "name": result["name"],
-
-            "percentage": float(
-                result["percentage"]
-            ),
-
-            "ranking_score": float(
-                result["ranking_score"]
-            ),
-
-            "matched": list(
-                result["matched"]
-            ),
-
-            "missing": list(
-                result["missing"]
-            ),
-
-            "total": int(
-                result["total"]
-            ),
-
-            "matched_count": int(
-                result["matched_count"]
-            ),
-
-            "missing_count": int(
-                result["missing_count"]
-            ),
-
-            "category": result[
-                "category"
-            ],
-
-            "recipe_category": result[
-                "recipe_category"
-            ]
-
-        })
-
-    return safe_results
+    return results[:limit]
 
 
 # ============================================================
 # DISPLAY RESULTS
 # ============================================================
 
-def display_results(results):
+def display_results(
+    results
+):
 
     print(
-        "\n" + "=" * 70
+        "\n"
+        + "=" * 70
     )
 
     print(
@@ -1416,31 +1085,24 @@ def display_results(results):
             "\nNo suitable recipes found."
         )
 
-        print(
-            "\nTry:"
-        )
-
-        print(
-            "  • Adding more ingredients"
-        )
-
-        print(
-            "  • Choosing another category"
-        )
-
         return
 
-    for i, recipe in enumerate(
+    for index, recipe in enumerate(
+
         results,
+
         start=1
+
     ):
 
         print(
-            "\n" + "-" * 70
+            "\n"
+            + "-" * 70
         )
 
         print(
-            f"{i}. {recipe['name']}"
+            f"{index}. "
+            f"{recipe['name']}"
         )
 
         print(
@@ -1449,7 +1111,7 @@ def display_results(results):
         )
 
         print(
-            f"Recipe Category: "
+            f"Category: "
             f"{recipe['recipe_category']}"
         )
 
@@ -1459,7 +1121,7 @@ def display_results(results):
         )
 
         print(
-            f"Ingredients matched: "
+            f"Matched: "
             f"{recipe['matched_count']} / "
             f"{recipe['total']}"
         )
@@ -1493,20 +1155,12 @@ def display_results(results):
         else:
 
             print(
-                "  None — you have all "
-                "recognized ingredients!"
+                "  None"
             )
 
     print(
-        "\n" + "=" * 70
-    )
-
-    print(
-        "             Recipe search completed!"
-    )
-
-    print(
-        "=" * 70
+        "\n"
+        + "=" * 70
     )
 
 
@@ -1517,45 +1171,29 @@ def display_results(results):
 if __name__ == "__main__":
 
     print(
-        "\nEnter the ingredients you currently have."
-    )
-
-    print(
-        "Example: chicken, rice, onion, garlic, yogurt"
+        "\nEnter your ingredients."
     )
 
     user_input = input(
-        "\nYour ingredients: "
+        "Ingredients: "
     )
 
-    user_ingredients = (
+    ingredients = (
         normalize_user_ingredients(
             user_input
         )
     )
 
-    if not user_ingredients:
+    if not ingredients:
 
         print(
-            "\nNo valid ingredients were understood."
+            "No valid ingredients found."
         )
 
-        exit()
-
-    print(
-        "\nIngredients understood by RecipeSense:"
-    )
-
-    for ingredient in sorted(
-        user_ingredients
-    ):
-
-        print(
-            f" - {ingredient}"
-        )
+        raise SystemExit
 
     category = input(
-        "\nCategory (optional): "
+        "Category (optional): "
     ).strip()
 
     if not category:
@@ -1563,12 +1201,15 @@ if __name__ == "__main__":
         category = None
 
     print(
-        "\nSearching recipes..."
+        "\nSearching..."
     )
 
     results = find_recipes(
-        user_ingredients,
+
+        ingredients,
+
         category=category,
+
         limit=10
     )
 
